@@ -213,17 +213,13 @@ If anything gets stuck, use **Stop** and **Reset network**, then review the logs
 - **sing-box** (core proxy engine) — SagerNet/sing-box
 - **Wintun** (TUN driver for Windows)
 
+---
+---
 
 #  〽️ SingBoxTunGui – Minimal PowerShell Script Fixes - UPDATE `04/02/2026 15:18:37`
 
+<img width="651" height="309" alt="image" src="https://github.com/user-attachments/assets/263446c2-8f81-439f-9570-11c6679b10e4" />
 
-<p align="center"><b>— — — — — — — — — — — — — — — — — — — —
- 
-  
-  <img width="651" height="309" alt="image"
-       src="https://github.com/user-attachments/assets/cb79dff0-b59f-4cc2-8b09-eb4591eb1b55" /><br/>
-       — — — — — — — — — — — — — — — — — — — — <b/>
-</p>
 
 
 This document describes the **minimal and safe modifications** applied to `SingBoxTunGui.ps1` to ensure reliable execution across different PowerShell hosts and correct handling of relative paths.
