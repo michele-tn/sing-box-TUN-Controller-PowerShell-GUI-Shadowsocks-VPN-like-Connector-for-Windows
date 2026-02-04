@@ -190,6 +190,17 @@ The downloader uses **HttpClient** with the **system proxy** and default credent
 
 ---
 
+## ⬇️ Download
+
+👉 **[Scarica sing-box TUN Controller](https://github.com/michele-tn/sing-box-TUN-Controller-PowerShell-GUI-Shadowsocks-VPN-like-Connector-for-Windows/blob/main/sing-box%20TUN%20Controller.7z)**
+
+### 🔐 SHA-512 File Hash
+
+```text
+b84e2ca49e05415835aff445d2f709160480e6ed5dd4ab566b6b5bd57818f5f8afd403dae67c778a7204cd023fffdc19485b62b6863ced2463f594d20d4eb45b
+```
+---
+
 ## Disclaimer
 
 This script modifies network configuration (TUN adapters and routes). Use at your own risk.  
