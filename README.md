@@ -216,7 +216,8 @@ If anything gets stuck, use **Stop** and **Reset network**, then review the logs
 ---
 ---
 
-#  〽️ SingBoxTunGui – Minimal PowerShell Script Fixes - UPDATE `04/02/2026 15:18:37`
+<!-- #  〽️ SingBoxTunGui – Minimal PowerShell Script Fixes - UPDATE `04/02/2026 15:18:37` -->
+#  〽️<a href="https://github.com/michele-tn/sing-box-TUN-Controller-PowerShell-GUI-Shadowsocks-VPN-like-Connector-for-Windows/blob/main/SingBoxTunGui(UPDATE).7z" target="_blank"> SingBoxTunGui</a> – Minimal PowerShell Script Fixes - UPDATE `04/02/2026 15:18:37`
 
 <img width="651" height="309" alt="image" src="https://github.com/user-attachments/assets/263446c2-8f81-439f-9570-11c6679b10e4" />
 
