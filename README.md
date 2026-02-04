@@ -212,3 +212,70 @@ If anything gets stuck, use **Stop** and **Reset network**, then review the logs
 
 - **sing-box** (core proxy engine) — SagerNet/sing-box
 - **Wintun** (TUN driver for Windows)
+- 
+
+
+#  〽️ SingBoxTunGui – Minimal PowerShell Script Fixes - UPDATE `04/02/2026 15:18:37`
+
+<img width="651" height="309" alt="image" src="https://github.com/user-attachments/assets/cb79dff0-b59f-4cc2-8b09-eb4591eb1b55" />
+
+This document describes the **minimal and safe modifications** applied to `SingBoxTunGui.ps1` to ensure reliable execution across different PowerShell hosts and correct handling of relative paths.
+
+These changes do **not** alter the script logic or behavior, but only improve compatibility and stability.
+
+---
+
+## 1. Explicitly load `System.Net.Http`
+
+Some PowerShell environments (especially when running `powershell.exe` instead of `pwsh`) do not automatically load the `System.Net.Http` assembly.  
+This can result in runtime errors such as:
+
+> `Unable to find type [System.Net.Http.HttpClientHandler]`
+
+To prevent this, the following code is added **immediately after the existing `Add-Type` statements**:
+
+```powershell
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+
+# Ensure System.Net.Http is available (fixes missing HttpClientHandler on some hosts)
+try {
+    Add-Type -AssemblyName System.Net.Http -ErrorAction Stop
+} catch {
+    throw "Unable to load System.Net.Http. Use pwsh (PowerShell 7) or ensure Windows PowerShell 5.1 + .NET Framework 4.5+ is installed. Details: $($_.Exception.Message)"
+}
+```
+
+This guarantees that `HttpClientHandler` and other HTTP-related types are available before being used by the script.
+
+---
+
+## 2. Force the working directory to the script location
+
+PowerShell resolves relative paths based on the current working directory, not on the script’s location.  
+When the script is launched from a different directory, this can cause paths to resolve incorrectly.
+
+To avoid this issue, the script now explicitly sets the working directory to its own folder:
+
+```powershell
+$scriptDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location -LiteralPath $scriptDir
+```
+
+This ensures that all relative paths (binaries, configuration files, logs, downloads, etc.) are resolved correctly regardless of how the script is launched.
+
+---
+
+## How to use
+
+1. Replace your existing `SingBoxTunGui.ps1` with the fixed version  
+   (or rename the downloaded file to `SingBoxTunGui.ps1`).
+
+2. Run the script using PowerShell 7 (recommended):
+
+```cmd
+pwsh -NoProfile -ExecutionPolicy Bypass -File "C:\Users\<Username>\Downloads\sing-box TUN Controller\SingBoxTunGui.ps1"
+```
+
+Running the script with `pwsh` ensures full .NET compatibility and avoids legacy limitations of Windows PowerShell.
+
