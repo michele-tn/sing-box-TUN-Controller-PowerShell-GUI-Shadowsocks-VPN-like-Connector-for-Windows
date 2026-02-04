@@ -1,5 +1,9 @@
 # sing-box TUN Controller (PowerShell GUI)
+
 **Shadowsocks “VPN-like” connector for Windows**
+![Sing-box TUN Controller](https://raw.githubusercontent.com/michele-tn/sing-box-TUN-Controller-PowerShell-GUI-Shadowsocks-VPN-like-Connector-for-Windows/3ad3bd2e3e07b09ef71a56e329c6d522d42f1d4f/Sin-box%20TUN%20Controller.jpg)
+
+
 
 A small **PowerShell + WinForms** desktop GUI that automates a **TUN-mode** connection using **sing-box** and your **personal Shadowsocks server**, giving a *VPN-like* experience on Windows.
 
