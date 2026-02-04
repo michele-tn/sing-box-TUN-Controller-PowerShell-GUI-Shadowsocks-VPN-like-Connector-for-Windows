@@ -1,0 +1,233 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="780" viewBox="0 0 1200 780" role="img" aria-label="sing-box TUN Controller - PowerShell GUI - Shadowsocks VPN-like Connector for Windows">
+  <defs>
+    <radialGradient id="bgRad" cx="18%" cy="14%" r="95%">
+      <stop offset="0" stop-color="#121c42"/>
+      <stop offset="0.58" stop-color="#0b1330"/>
+      <stop offset="1" stop-color="#070b18"/>
+    </radialGradient>
+
+    <linearGradient id="bar" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#141d3a"/>
+      <stop offset="1" stop-color="#0f162e"/>
+    </linearGradient>
+
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#a78bfa"/>
+      <stop offset="0.45" stop-color="#22c55e"/>
+      <stop offset="1" stop-color="#38bdf8"/>
+    </linearGradient>
+
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="rgba(255,255,255,0.10)"/>
+      <stop offset="1" stop-color="rgba(255,255,255,0.03)"/>
+    </linearGradient>
+
+    <pattern id="noiseDots" width="18" height="18" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1" fill="#fff" opacity="0.04"/>
+      <circle cx="13" cy="8" r="1" fill="#fff" opacity="0.03"/>
+      <circle cx="8" cy="15" r="1" fill="#fff" opacity="0.02"/>
+    </pattern>
+
+    <filter id="softShadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#000" flood-opacity="0.55"/>
+    </filter>
+
+    <filter id="outerGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="7" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <filter id="textGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="2.4" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <style>
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+      .ui   { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"; }
+
+      .t1 { fill: rgba(255,255,255,0.92); }
+      .t2 { fill: rgba(255,255,255,0.72); }
+      .t3 { fill: rgba(255,255,255,0.58); }
+
+      .green { fill: #22c55e; }
+      .cyan  { fill: #38bdf8; }
+      .violet{ fill: #a78bfa; }
+      .amber { fill: #fbbf24; }
+
+      .chipText { fill: rgba(255,255,255,0.80); font-size: 12px; }
+      .chipFill { fill: rgba(255,255,255,0.06); }
+
+      .prompt { fill: #22c55e; font-weight: 800; }
+      .cmd { fill: rgba(255,255,255,0.88); }
+      .out { fill: rgba(255,255,255,0.72); }
+
+      .panelStroke { stroke: rgba(255,255,255,0.10); }
+      .panelFill   { fill: rgba(0,0,0,0.16); }
+      .sepLine     { fill: rgba(255,255,255,0.12); }
+
+      .repoLabel { fill: rgba(255,255,255,0.70); font-size: 12px; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
+      .repoText  { fill: rgba(255,255,255,0.60); font-size: 12px; }
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="780" rx="28" fill="url(#bgRad)"/>
+  <rect width="1200" height="780" rx="28" fill="url(#noiseDots)"/>
+
+  <!-- Accent streak -->
+  <path d="M-70,700 C220,340 520,820 860,520 C1055,360 1145,372 1290,250"
+        stroke="url(#accent)" stroke-width="13" stroke-linecap="round" opacity="0.22" fill="none" filter="url(#outerGlow)"/>
+  <path d="M-70,700 C220,340 520,820 860,520 C1055,360 1145,372 1290,250"
+        stroke="rgba(255,255,255,0.10)" stroke-width="2" stroke-linecap="round" opacity="0.35" fill="none"/>
+
+  <!-- Window -->
+  <g filter="url(#softShadow)">
+    <!-- Window (più alta, con footer separato) -->
+    <rect x="56" y="44" width="1088" height="700" rx="18" fill="rgba(12,16,30,0.80)" stroke="rgba(255,255,255,0.10)"/>
+    <rect x="56" y="44" width="1088" height="700" rx="18" fill="url(#glass)" opacity="0.90"/>
+
+    <!-- Top bar -->
+    <rect x="56" y="44" width="1088" height="54" rx="18" fill="url(#bar)"/>
+    <rect x="56" y="80" width="1088" height="18" fill="url(#bar)"/>
+    <rect x="56" y="98" width="1088" height="2" fill="url(#accent)" opacity="0.90"/>
+
+    <!-- Window controls -->
+    <circle cx="88" cy="71" r="7" fill="#ff5f57"/>
+    <circle cx="110" cy="71" r="7" fill="#febc2e"/>
+    <circle cx="132" cy="71" r="7" fill="#28c840"/>
+
+    <!-- Title -->
+    <text x="166" y="76" class="ui t2" font-size="14">
+      sing-box TUN Controller • PowerShell GUI • Shadowsocks • Windows
+    </text>
+
+    <!-- Right icons -->
+    <g transform="translate(1032,60)" opacity="0.95">
+      <g>
+        <rect x="0" y="0" width="10" height="10" rx="1.5" fill="#60a5fa"/>
+        <rect x="12" y="0" width="10" height="10" rx="1.5" fill="#60a5fa"/>
+        <rect x="0" y="12" width="10" height="10" rx="1.5" fill="#60a5fa"/>
+        <rect x="12" y="12" width="10" height="10" rx="1.5" fill="#60a5fa"/>
+      </g>
+      <g transform="translate(34,-1)">
+        <path d="M10 2c3 0 6 2 6 5v4c0 7-6 11-6 11S4 18 4 11V7c0-3 3-5 6-5z" fill="#22c55e"/>
+        <path d="M10 6c1.7 0 3 1.1 3 2.6V10H7V8.6C7 7.1 8.3 6 10 6z" fill="rgba(0,0,0,0.28)"/>
+      </g>
+      <g transform="translate(66,4)">
+        <circle cx="6" cy="6" r="6" fill="#38bdf8"/>
+        <circle cx="6" cy="6" r="2.2" fill="rgba(0,0,0,0.30)"/>
+      </g>
+    </g>
+
+    <!-- HEADER -->
+    <g transform="translate(88,140)">
+      <text x="0" y="0" class="mono t1" font-size="26" filter="url(#textGlow)">
+        <tspan class="violet">[</tspan><tspan class="cyan">PowerShell GUI</tspan><tspan class="violet">]</tspan>
+        <tspan> sing-box TUN Controller</tspan>
+      </text>
+
+      <text x="0" y="30" class="ui t2" font-size="15">
+        Shadowsocks VPN-like Connector for Windows
+      </text>
+
+      <!-- Chips row -->
+      <g transform="translate(0,54)">
+        <g>
+          <rect x="0" y="0" width="102" height="26" rx="13" class="chipFill" stroke="rgba(167,139,250,0.40)"/>
+          <circle cx="14" cy="13" r="4" fill="#a78bfa"/>
+          <text x="26" y="17" class="ui chipText">TUN Mode</text>
+        </g>
+
+        <g transform="translate(114,0)">
+          <rect x="0" y="0" width="126" height="26" rx="13" class="chipFill" stroke="rgba(34,197,94,0.40)"/>
+          <circle cx="14" cy="13" r="4" fill="#22c55e"/>
+          <text x="26" y="17" class="ui chipText">Auto-route</text>
+        </g>
+
+        <g transform="translate(252,0)">
+          <rect x="0" y="0" width="154" height="26" rx="13" class="chipFill" stroke="rgba(56,189,248,0.40)"/>
+          <circle cx="14" cy="13" r="4" fill="#38bdf8"/>
+          <text x="26" y="17" class="ui chipText">DNS Protection</text>
+        </g>
+
+        <g transform="translate(418,0)">
+          <rect x="0" y="0" width="128" height="26" rx="13" class="chipFill" stroke="rgba(251,191,36,0.42)"/>
+          <circle cx="14" cy="13" r="4" fill="#fbbf24"/>
+          <text x="26" y="17" class="ui chipText">Start/Stop</text>
+        </g>
+      </g>
+    </g>
+
+    <!-- Separator header -> terminal -->
+    <rect x="88" y="236" width="1016" height="1" class="sepLine"/>
+
+    <!-- TERMINAL (solo log) -->
+    <g transform="translate(88,260)" class="mono" font-size="18">
+      <!-- Panel A -->
+      <rect x="-12" y="-14" width="1040" height="92" rx="14" class="panelFill"/>
+      <rect x="-12" y="-14" width="1040" height="92" rx="14" fill="none" class="panelStroke"/>
+
+      <text x="0" y="22" class="prompt">$</text>
+      <text x="26" y="22" class="cmd">.\SingBox-TUN-Controller.ps1</text>
+
+      <text x="0" y="62" class="out">
+        <tspan class="green">[+]</tspan> GUI ready — select profile, click <tspan class="t1">Connect</tspan>
+      </text>
+
+      <!-- Separator -->
+      <rect x="0" y="108" width="1016" height="1" class="sepLine"/>
+
+      <!-- Panel B -->
+      <rect x="-12" y="126" width="1040" height="150" rx="14" class="panelFill"/>
+      <rect x="-12" y="126" width="1040" height="150" rx="14" fill="none" class="panelStroke"/>
+
+      <text x="0" y="162" class="prompt">$</text>
+      <text x="26" y="162" class="cmd">sing-box run -c config.json</text>
+
+      <!-- Outbound group (2 righe, ben distanziate) -->
+      <text x="0" y="202" class="out">
+        <tspan class="cyan">[i]</tspan>
+        <tspan> Outbound: </tspan><tspan class="t1">shadowsocks</tspan>
+        <tspan> • Mode: </tspan><tspan class="t1">TUN</tspan>
+      </text>
+
+      <text x="0" y="240" class="out">
+        <tspan class="cyan">[i]</tspan>
+        <tspan> OS: </tspan><tspan class="t1">Windows</tspan>
+      </text>
+
+      <!-- Extra breathing space before footer -->
+      <rect x="0" y="292" width="1016" height="1" class="sepLine"/>
+
+      <text x="0" y="328" class="out">
+        <tspan class="amber">⚡</tspan> One-click VPN-like experience — less JSON, more “just works”.
+      </text>
+    </g>
+
+    <!-- FOOTER REPO (più distanziato e con più padding) -->
+    <!-- (Spaziatura aumentata: separatore + 24px di aria prima del footer) -->
+    <rect x="88" y="612" width="1016" height="1" class="sepLine"/>
+
+    <g transform="translate(88,646)">
+      <!-- più padding interno: y -28, height 84 -->
+      <rect x="-12" y="-28" width="1040" height="84" rx="16" class="panelFill"/>
+      <rect x="-12" y="-28" width="1040" height="84" rx="16" fill="none" class="panelStroke"/>
+
+      <!-- testi più "in basso" per respirare -->
+      <text x="0" y="6" class="repoLabel">Repository</text>
+
+      <!-- Repo su una riga, ben separata dal titolo -->
+      <text x="0" y="36" class="mono repoText">
+        <tspan x="0">Repo:</tspan>
+        <tspan x="54">michele-tn/sing-box-TUN-Controller-PowerShell-GUI-Shadowsocks-VPN-like-Connector-for-Windows</tspan>
+      </text>
+    </g>
+  </g>
+</svg>
