@@ -283,3 +283,66 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File "C:\Users\<Username>\Downloads\sin
 
 Running the script with `pwsh` ensures full .NET compatibility and avoids legacy limitations of Windows PowerShell.
 
+
+---
+---
+
+
+# Shadowsocks URL Generator (Python)
+
+This small Python script generates a valid **Shadowsocks (`ss://`) URL** from basic connection parameters such as encryption method, password, host, and port.
+
+## Description
+
+The script:
+1. Combines the encryption method and password.
+2. Encodes them using Base64.
+3. Builds a properly formatted `ss://` URL.
+4. URL-encodes the server tag for safe usage in clients.
+
+The resulting URL can be directly imported into most Shadowsocks-compatible clients.
+
+## Code
+
+```python
+import base64
+import urllib.parse
+
+method = "chacha20-ietf-poly1305"
+password = "mypassword"
+host = "1.2.3.4"
+port = 8388
+tag = "My Shadowsocks Server"
+
+userinfo = f"{method}:{password}"
+encoded = base64.b64encode(userinfo.encode()).decode()
+
+ss_url = f"ss://{encoded}@{host}:{port}#{urllib.parse.quote(tag)}"
+print(ss_url)
+```
+
+## Output Example
+
+```text
+ss://Y2hhY2hhMjAtaWV0Zi1wb2x5MTMwNTpteXBhc3N3b3Jk@1.2.3.4:8388#My%20Shadowsocks%20Server
+```
+
+## Requirements
+
+- Python 3.x
+- No external dependencies (standard library only)
+
+## Usage
+
+Run the script with:
+
+```bash
+python ss_url_generator.py
+```
+
+The generated Shadowsocks URL will be printed to standard output.
+
+## Notes
+
+- Make sure the encryption method matches the one configured on your Shadowsocks server.
+- Protect your password and avoid sharing generated URLs publicly.
