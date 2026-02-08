@@ -286,9 +286,10 @@ Running the script with `pwsh` ensures full .NET compatibility and avoids legacy
 
 ---
 ---
+---
 
 
-# Shadowsocks URL Generator (Python)
+# 〽️ Shadowsocks URL Generator (Python)
 
 This small Python script generates a valid **Shadowsocks (`ss://`) URL** from basic connection parameters such as encryption method, password, host, and port.
 
