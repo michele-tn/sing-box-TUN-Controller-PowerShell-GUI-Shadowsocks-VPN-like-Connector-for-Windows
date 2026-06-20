@@ -192,14 +192,24 @@ The downloader uses **HttpClient** with the **system proxy** and default credent
 
 ## ⬇️ Download
 
-👉 **[Scarica sing-box TUN Controller](https://github.com/michele-tn/sing-box-TUN-Controller-PowerShell-GUI-Shadowsocks-VPN-like-Connector-for-Windows/blob/main/sing-box%20TUN%20Controller.7z)**
+👉 **[Download sing-box TUN Controller Vs2 !!!](https://raw.githubusercontent.com/michele-tn/sing-box-TUN-Controller-PowerShell-GUI-Shadowsocks-VPN-like-Connector-for-Windows/refs/heads/main/SingBoxTunGui(UPDATE).7z)**
 
 ### 🔐 SHA-512 File Hash
 
 ```text
-b84e2ca49e05415835aff445d2f709160480e6ed5dd4ab566b6b5bd57818f5f8afd403dae67c778a7204cd023fffdc19485b62b6863ced2463f594d20d4eb45b
+0e8745c89e0f081fcfdb39b8bcdf368aaab6e1347e3c95b7529f681d5f1d796529e0e24302f497803a16e817be73635e1bc36432d987f2d63c6320bd930b33ec
 ```
 ---
+
+### 🚀 Running the Script from MobaXterm
+
+To execute the script from **MobaXterm**, simply open a **PowerShell** shell and, **without changing the current directory**, run the following command:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File '..\..\..\..\Downloads\SingBoxTunGui(UPDATE)\SingBoxTunGui.ps1'
+```
+
+> **Note:** The command must be executed from the directory where the MobaXterm PowerShell session starts. No `cd` command is required before launching the script.
 
 ## Disclaimer
 
