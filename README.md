@@ -357,3 +357,284 @@ The generated Shadowsocks URL will be printed to standard output.
 
 - Make sure the encryption method matches the one configured on your Shadowsocks server.
 - Protect your password and avoid sharing generated URLs publicly.
+
+
+---
+---
+---
+
+# SingBoxTunGui.ps1 Comparison Report
+
+## Overview
+
+This document compares:
+
+- **Original:** `sing-box TUN Controller.7z`
+- **Updated:** `SingBoxTunGui(UPDATE).7z`
+
+The updated version focuses on **reliability, compatibility, and download resilience** rather than introducing new GUI features.
+
+---
+
+# 1. System.Net.Http Assembly Loading
+
+## Original
+
+```powershell
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+```
+
+## Updated
+
+```powershell
+Add-Type -AssemblyName System.Windows.Forms
+try { Add-Type -AssemblyName System.Net.Http } catch {}
+Add-Type -AssemblyName System.Drawing
+```
+
+### Difference (FileDiff Style)
+
+```diff
+ Add-Type -AssemblyName System.Windows.Forms
++try { Add-Type -AssemblyName System.Net.Http } catch {}
++
+ Add-Type -AssemblyName System.Drawing
+```
+
+### Impact
+
+- Explicitly loads `System.Net.Http`
+- Improves compatibility with different PowerShell/.NET environments
+- Prevents startup failures if the assembly is unavailable
+
+---
+
+# 2. Safe HttpClient Creation
+
+## Original
+
+```powershell
+function New-HttpClient {
+    $handler = New-Object System.Net.Http.HttpClientHandler
+    ...
+    return $client
+}
+```
+
+## Updated
+
+```powershell
+function New-HttpClient {
+    try {
+        $handler = New-Object System.Net.Http.HttpClientHandler
+        ...
+        return $client
+    }
+    catch {
+        return $null
+    }
+}
+```
+
+### Difference (FileDiff Style)
+
+```diff
+-function New-HttpClient {
+-    $handler = New-Object System.Net.Http.HttpClientHandler
++function New-HttpClient {
++    try {
++        $handler = New-Object System.Net.Http.HttpClientHandler
+         ...
+         return $client
++    }
++    catch {
++        return $null
++    }
+ }
+```
+
+### Impact
+
+- Prevents application crashes
+- Allows graceful fallback mechanisms
+- Better support for older PowerShell installations
+
+---
+
+# 3. HTTP Request Fallback Logic
+
+## New Code Introduced
+
+```powershell
+if (-not $c) {
+    try {
+        if (Get-Command Invoke-WebRequest -ErrorAction SilentlyContinue) {
+            $h = @{}
+            if ($Referer) { $h['Referer'] = $Referer }
+            return (Invoke-WebRequest -Uri $Url -Headers $h -UseBasicParsing).Content
+        }
+    } catch {}
+
+    $wc = New-Object System.Net.WebClient
+    if ($Referer) { $wc.Headers['Referer'] = $Referer }
+    $wc.Headers['User-Agent'] = 'Mozilla/5.0'
+    return $wc.DownloadString($Url)
+}
+```
+
+### Difference (FileDiff Style)
+
+```diff
+ $c = New-HttpClient
++if (-not $c) {
++    try {
++        if (Get-Command Invoke-WebRequest -ErrorAction SilentlyContinue) {
++            ...
++        }
++    } catch {}
++
++    $wc = New-Object System.Net.WebClient
++    ...
++    return $wc.DownloadString($Url)
++}
+```
+
+### Impact
+
+Request flow becomes:
+
+```text
+HttpClient
+    |
+    +--> Success
+    |
+    +--> Failure
+             |
+             +--> Invoke-WebRequest
+             |
+             +--> WebClient
+```
+
+Benefits:
+
+- More reliable GitHub downloads
+- Better operation behind proxies
+- Improved Windows Server compatibility
+
+---
+
+# 4. File Download Fallback Logic
+
+## New Code Introduced
+
+```powershell
+if (-not $c) {
+    try {
+        $wc = New-Object System.Net.WebClient
+        if ($Referer) { $wc.Headers['Referer'] = $Referer }
+        $wc.Headers['User-Agent'] = 'Mozilla/5.0'
+        $wc.DownloadFile($Url, $OutFile)
+        return
+    }
+    catch {
+        throw $_
+    }
+}
+```
+
+### Difference (FileDiff Style)
+
+```diff
+ $c = New-HttpClient
++if (-not $c) {
++    try {
++        $wc = New-Object System.Net.WebClient
++        ...
++        $wc.DownloadFile($Url, $OutFile)
++        return
++    }
++    catch {
++        throw $_
++    }
++}
+```
+
+### Impact
+
+- Downloads continue working even when HttpClient fails
+- More resilient update process
+- Better support for legacy systems
+
+---
+
+# 5. sing-box Launch Argument Fix
+
+## Original
+
+```powershell
+$args = @(
+    "run",
+    "-c",
+    $configPath
+)
+```
+
+## Updated
+
+```powershell
+$args = @(
+    "run",
+    "-c",
+    ("`"" + $configPath + "`"")
+)
+```
+
+### Difference (FileDiff Style)
+
+```diff
+-$args = @("run", "-c", $configPath)
++$args = @("run", "-c", ("`"" + $configPath + "`""))
+```
+
+### Impact
+
+Correctly handles paths containing spaces.
+
+Example:
+
+```text
+C:\Program Files\sing-box\config.json
+```
+
+Without quoting, sing-box may fail to load the configuration file.
+
+---
+
+# Summary
+
+| Area | Original | Updated |
+|--------|----------|----------|
+| System.Net.Http loading | No | Yes |
+| HttpClient exception handling | No | Yes |
+| Invoke-WebRequest fallback | No | Yes |
+| WebClient fallback | No | Yes |
+| Download fallback | No | Yes |
+| Config path quoting | No | Yes |
+| GUI changes | No | No |
+| Tunnel logic changes | No | No |
+| New user features | No | No |
+
+## Final Assessment
+
+The UPDATE version is a maintenance and reliability release.
+
+Key improvements:
+
+- Better compatibility with PowerShell 5.1
+- Better compatibility with older .NET environments
+- More robust HTTP operations
+- More reliable downloads
+- Fixed sing-box configuration path handling
+
+No GUI redesign or functional workflow changes were introduced.
