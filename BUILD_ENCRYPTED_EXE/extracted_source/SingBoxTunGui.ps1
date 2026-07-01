@@ -20,6 +20,7 @@ Add-Type -AssemblyName System.Drawing
 # Paths
 # --------------------------
 $scriptDir  = $PSScriptRoot
+$appRoot    = if ($env:SINGBOXTUNGUI_APPDIR) { $env:SINGBOXTUNGUI_APPDIR } else { $scriptDir }
 $binDir     = Join-Path $scriptDir "bin"
 $singBoxExe = Join-Path $binDir "sing-box.exe"
 $wintunDll  = Join-Path $binDir "wintun.dll"
@@ -39,6 +40,86 @@ $script:TunDnsConfigDeadline = $null
 # Join-Path resolves them safely at runtime without hard-coded user-specific paths.
 
 New-Item -ItemType Directory -Path $binDir -Force | Out-Null
+
+function New-SingBoxTunGuiIcon {
+    param([Parameter(Mandatory=$true)][string]$Path)
+
+    Add-Type -AssemblyName System.Drawing
+
+    $bitmap = New-Object System.Drawing.Bitmap 64, 64
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+    $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+    $graphics.Clear([System.Drawing.Color]::FromArgb(0, 0, 0, 0))
+
+    $globeBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(93, 203, 229))
+    $shieldBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(197, 244, 128))
+    $blackBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::Black)
+    $blackPen = New-Object System.Drawing.Pen ([System.Drawing.Color]::Black), 4
+    $blackPen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
+    $blackPen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
+    $thinPen = New-Object System.Drawing.Pen ([System.Drawing.Color]::Black), 3
+    $thinPen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
+    $thinPen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
+
+    $globeRect = New-Object System.Drawing.Rectangle 10, 4, 50, 50
+    $graphics.FillEllipse($globeBrush, $globeRect)
+    $graphics.DrawEllipse($blackPen, $globeRect)
+    $graphics.DrawLine($thinPen, 12, 29, 58, 29)
+    $graphics.DrawLine($thinPen, 35, 6, 35, 53)
+    $graphics.DrawArc($thinPen, 22, 5, 25, 49, 86, 188)
+    $graphics.DrawArc($thinPen, 22, 5, 25, 49, 266, 188)
+    $graphics.DrawArc($thinPen, 14, 5, 42, 19, 20, 140)
+
+    $shieldPath = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $shieldPoints = @(
+        (New-Object System.Drawing.Point 5, 35),
+        (New-Object System.Drawing.Point 18, 31),
+        (New-Object System.Drawing.Point 30, 35),
+        (New-Object System.Drawing.Point 30, 47),
+        (New-Object System.Drawing.Point 25, 57),
+        (New-Object System.Drawing.Point 17, 61),
+        (New-Object System.Drawing.Point 9, 57),
+        (New-Object System.Drawing.Point 5, 47)
+    )
+    $shieldPath.AddPolygon($shieldPoints)
+    $graphics.FillPath($shieldBrush, $shieldPath)
+    $graphics.DrawPath($blackPen, $shieldPath)
+
+    $graphics.DrawArc($thinPen, 11, 42, 14, 10, 205, 130)
+    $graphics.DrawArc($thinPen, 8, 38, 20, 16, 205, 130)
+    $graphics.FillEllipse($blackBrush, 15, 50, 5, 5)
+
+    $icon = [System.Drawing.Icon]::FromHandle($bitmap.GetHicon())
+    $stream = [System.IO.File]::Create($Path)
+    try {
+        $icon.Save($stream)
+    } finally {
+        $stream.Dispose()
+        $icon.Dispose()
+        $shieldPath.Dispose()
+        $thinPen.Dispose()
+        $blackPen.Dispose()
+        $blackBrush.Dispose()
+        $shieldBrush.Dispose()
+        $globeBrush.Dispose()
+        $graphics.Dispose()
+        $bitmap.Dispose()
+    }
+}
+
+$appIconPath = @(
+    (Join-Path $appRoot "assets\SingBoxTunGui.ico"),
+    (Join-Path $scriptDir "assets\SingBoxTunGui.ico"),
+    (Join-Path $binDir "SingBoxTunGui.ico")
+) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+if (-not $appIconPath) {
+    $appIconPath = Join-Path $binDir "SingBoxTunGui.ico"
+    try {
+        New-SingBoxTunGuiIcon -Path $appIconPath
+    } catch {
+        try { Write-AppLog "Icon generation failed: $($_.Exception.Message)" "WARN" } catch {}
+    }
+}
 
 # --------------------------
 # Logging helpers
@@ -1122,6 +1203,9 @@ $form.MinimumSize = New-Object System.Drawing.Size(820, 620)
 $form.Size = New-Object System.Drawing.Size(980, 780)
 $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::Sizable
 $form.MaximizeBox = $true
+if (Test-Path -LiteralPath $appIconPath) {
+    try { $form.Icon = New-Object System.Drawing.Icon($appIconPath) } catch {}
+}
 
 $lblHeader = New-Object System.Windows.Forms.Label
 $lblHeader.Text = "sing-box TUN Controller"
@@ -1391,18 +1475,20 @@ $script:Layout = {
     $cardLogs.Height = [Math]::Max(140, ($bottomLimit - $cardLogs.Top))
 
     $rightColW = 202
+    $rightMargin = 12
+    $logGap = 10
     $btnW = 96
     $btnH = 30
 
     $txtOutput.Location = New-Object System.Drawing.Point(12, 40)
-    $txtOutput.Size = New-Object System.Drawing.Size(($cardLogs.Width - 12 - 12 - $rightColW), ($cardLogs.Height - 52))
+    $txtOutput.Size = New-Object System.Drawing.Size(($cardLogs.Width - 12 - $logGap - $rightColW - $rightMargin), ($cardLogs.Height - 52))
 
-    $rx = ($txtOutput.Right + 10)
+    $rx = ($cardLogs.Width - $rightMargin - $rightColW)
     $btnCopyLog.Location    = New-Object System.Drawing.Point($rx, 40);  $btnCopyLog.Size    = New-Object System.Drawing.Size($btnW,$btnH)
-    $btnOpenAppLog.Location = New-Object System.Drawing.Point(($rx+$btnW+10), 40); $btnOpenAppLog.Size = New-Object System.Drawing.Size($btnW,$btnH)
+    $btnOpenAppLog.Location = New-Object System.Drawing.Point(($rx+$btnW+$logGap), 40); $btnOpenAppLog.Size = New-Object System.Drawing.Size($btnW,$btnH)
 
     $btnOpenStdOut.Location = New-Object System.Drawing.Point($rx, 78);  $btnOpenStdOut.Size  = New-Object System.Drawing.Size($btnW,$btnH)
-    $btnOpenStdErr.Location = New-Object System.Drawing.Point(($rx+$btnW+10), 78); $btnOpenStdErr.Size  = New-Object System.Drawing.Size($btnW,$btnH)
+    $btnOpenStdErr.Location = New-Object System.Drawing.Point(($rx+$btnW+$logGap), 78); $btnOpenStdErr.Size  = New-Object System.Drawing.Size($btnW,$btnH)
 
     $btnClearUiLog.Location = New-Object System.Drawing.Point($rx, 116); $btnClearUiLog.Size  = New-Object System.Drawing.Size($rightColW,$btnH)
 }

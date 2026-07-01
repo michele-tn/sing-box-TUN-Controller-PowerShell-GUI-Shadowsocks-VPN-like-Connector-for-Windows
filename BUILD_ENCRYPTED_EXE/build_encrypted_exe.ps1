@@ -5,9 +5,11 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $source = Join-Path $root "extracted_source\SingBoxTunGui.ps1"
 $buildDir = Join-Path $root "build_encrypted"
 $distDir = Join-Path $root "dist"
+$distAssetsDir = Join-Path $distDir "assets"
 $loaderCs = Join-Path $buildDir "SingBoxTunGui.Loader.cs"
 $exePath = Join-Path $distDir "SingBoxTunGui.exe"
 $iconPath = Join-Path $buildDir "SingBoxTunGui.ico"
+$sourceIconPath = Join-Path $root "assets\SingBoxTunGui.ico"
 $manifestPath = Join-Path $buildDir "SingBoxTunGui.exe.manifest"
 $certPath = Join-Path $distDir "SingBoxTunGui_CodeSigning.cer"
 $hashPath = "$exePath.sha256"
@@ -17,7 +19,7 @@ if (-not (Test-Path -LiteralPath $source)) {
     throw "Source script not found: $source"
 }
 
-New-Item -ItemType Directory -Force -Path $buildDir, $distDir | Out-Null
+New-Item -ItemType Directory -Force -Path $buildDir, $distDir, $distAssetsDir | Out-Null
 
 function New-SingBoxTunGuiIcon {
     param([Parameter(Mandatory=$true)][string]$Path)
@@ -29,21 +31,43 @@ function New-SingBoxTunGuiIcon {
     $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
     $graphics.Clear([System.Drawing.Color]::FromArgb(0, 0, 0, 0))
 
-    $bgBrush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
-        (New-Object System.Drawing.Rectangle 0, 0, 64, 64),
-        [System.Drawing.Color]::FromArgb(23, 98, 132),
-        [System.Drawing.Color]::FromArgb(39, 176, 117),
-        45
+    $globeBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(93, 203, 229))
+    $shieldBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(197, 244, 128))
+    $blackBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::Black)
+    $blackPen = New-Object System.Drawing.Pen ([System.Drawing.Color]::Black), 4
+    $blackPen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
+    $blackPen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
+    $thinPen = New-Object System.Drawing.Pen ([System.Drawing.Color]::Black), 3
+    $thinPen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
+    $thinPen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
+
+    $globeRect = New-Object System.Drawing.Rectangle 10, 4, 50, 50
+    $graphics.FillEllipse($globeBrush, $globeRect)
+    $graphics.DrawEllipse($blackPen, $globeRect)
+    $graphics.DrawLine($thinPen, 12, 29, 58, 29)
+    $graphics.DrawLine($thinPen, 35, 6, 35, 53)
+    $graphics.DrawArc($thinPen, 22, 5, 25, 49, 86, 188)
+    $graphics.DrawArc($thinPen, 22, 5, 25, 49, 266, 188)
+    $graphics.DrawArc($thinPen, 14, 5, 42, 19, 20, 140)
+
+    $shieldPath = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $shieldPoints = @(
+        (New-Object System.Drawing.Point 5, 35),
+        (New-Object System.Drawing.Point 18, 31),
+        (New-Object System.Drawing.Point 30, 35),
+        (New-Object System.Drawing.Point 30, 47),
+        (New-Object System.Drawing.Point 25, 57),
+        (New-Object System.Drawing.Point 17, 61),
+        (New-Object System.Drawing.Point 9, 57),
+        (New-Object System.Drawing.Point 5, 47)
     )
-    $graphics.FillEllipse($bgBrush, 4, 4, 56, 56)
+    $shieldPath.AddPolygon($shieldPoints)
+    $graphics.FillPath($shieldBrush, $shieldPath)
+    $graphics.DrawPath($blackPen, $shieldPath)
 
-    $whitePen = New-Object System.Drawing.Pen ([System.Drawing.Color]::White), 5
-    $whitePen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
-    $whitePen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
-    $graphics.DrawArc($whitePen, 17, 18, 30, 28, 205, 250)
-
-    $dotBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::White)
-    $graphics.FillEllipse($dotBrush, 29, 29, 7, 7)
+    $graphics.DrawArc($thinPen, 11, 42, 14, 10, 205, 130)
+    $graphics.DrawArc($thinPen, 8, 38, 20, 16, 205, 130)
+    $graphics.FillEllipse($blackBrush, 15, 50, 5, 5)
 
     $icon = [System.Drawing.Icon]::FromHandle($bitmap.GetHicon())
     $stream = [System.IO.File]::Create($Path)
@@ -52,9 +76,12 @@ function New-SingBoxTunGuiIcon {
     } finally {
         $stream.Dispose()
         $icon.Dispose()
-        $dotBrush.Dispose()
-        $whitePen.Dispose()
-        $bgBrush.Dispose()
+        $shieldPath.Dispose()
+        $thinPen.Dispose()
+        $blackPen.Dispose()
+        $blackBrush.Dispose()
+        $shieldBrush.Dispose()
+        $globeBrush.Dispose()
         $graphics.Dispose()
         $bitmap.Dispose()
     }
@@ -110,7 +137,12 @@ function Write-Sha256File {
     [System.IO.File]::WriteAllText($OutputPath, $line + [Environment]::NewLine, [System.Text.Encoding]::ASCII)
 }
 
-New-SingBoxTunGuiIcon -Path $iconPath
+if (Test-Path -LiteralPath $sourceIconPath) {
+    Copy-Item -LiteralPath $sourceIconPath -Destination $iconPath -Force
+} else {
+    New-SingBoxTunGuiIcon -Path $iconPath
+}
+Copy-Item -LiteralPath $iconPath -Destination (Join-Path $distAssetsDir "SingBoxTunGui.ico") -Force
 
 $manifest = @"
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -267,9 +299,24 @@ if (-not $csc) {
     throw "csc.exe not found."
 }
 
-& $csc /nologo /optimize+ /target:winexe /platform:anycpu /win32icon:$iconPath /win32manifest:$manifestPath /out:$exePath /reference:System.Windows.Forms.dll $loaderCs
-if ($LASTEXITCODE -ne 0) {
-    throw "C# compilation failed with exit code $LASTEXITCODE."
+$cscArgs = @(
+    "/nologo",
+    "/optimize+",
+    "/target:winexe",
+    "/platform:anycpu",
+    "/win32icon:$iconPath",
+    "/win32manifest:$manifestPath",
+    "/out:$exePath",
+    "/reference:System.Windows.Forms.dll",
+    $loaderCs
+)
+& $csc @cscArgs
+$compileExitCode = if (Get-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue) { $global:LASTEXITCODE } else { 0 }
+if ($compileExitCode -ne 0) {
+    throw "C# compilation failed with exit code $compileExitCode."
+}
+if (-not (Test-Path -LiteralPath $exePath)) {
+    throw "C# compilation did not create the expected executable: $exePath"
 }
 
 $cert = Get-OrCreate-CodeSigningCertificate -Subject $certSubject
