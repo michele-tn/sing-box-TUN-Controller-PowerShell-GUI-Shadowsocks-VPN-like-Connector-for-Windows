@@ -1,9 +1,11 @@
-﻿# SingBoxTunGui.ps1 (FULL / FIXED)
+# SingBoxTunGui.ps1 (FULL / FIXED)
 # - sing-box latest via GitHub API
 # - Wintun via wintun.net (robust) + SHA256 verification + HttpClient (proxy+UA)
 # - Resizable UI (dynamic layout)
 # - Robust ss:// parsing + auto-prepend scheme
 # - Start/Stop + watchdog + network cleanup
+# - sing-box 1.13+ compatible route actions + Windows TUN DNS configuration
+# - DNS bootstrap prevents the Shadowsocks server hostname from creating a DNS/TUN startup loop
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -17,15 +19,24 @@ Add-Type -AssemblyName System.Drawing
 # --------------------------
 # Paths
 # --------------------------
-$scriptDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
+$scriptDir  = $PSScriptRoot
 $binDir     = Join-Path $scriptDir "bin"
 $singBoxExe = Join-Path $binDir "sing-box.exe"
 $wintunDll  = Join-Path $binDir "wintun.dll"
 
 $configPath = Join-Path $scriptDir "sing-box.json"
 $appLogPath = Join-Path $scriptDir "app.log"
-$stdoutPath = Join-Path $scriptDir "singbox.stdout.log"
-$stderrPath = Join-Path $scriptDir "singbox.stderr.log"
+$stdoutPath     = Join-Path $scriptDir "singbox.stdout.log"
+$stderrPath     = Join-Path $scriptDir "singbox.stderr.log"
+$singBoxLogPath = Join-Path $scriptDir "singbox.log"
+
+$script:ConfigReady = $false
+$script:LastTunDnsSelfTestWarning = $null
+$script:TunDnsConfigTimer = $null
+$script:TunDnsConfigDeadline = $null
+
+# All application files are addressed relative to this script folder.
+# Join-Path resolves them safely at runtime without hard-coded user-specific paths.
 
 New-Item -ItemType Directory -Path $binDir -Force | Out-Null
 
@@ -134,8 +145,120 @@ function Remove-LingeringSingBoxTunAdapters {
     }
 }
 
+# --------------------------
+# Windows TUN DNS handling
+# --------------------------
+# sing-box 1.13 does not configure the Windows per-interface DNS automatically.
+# The next IPv4 address in the TUN subnet is used as a virtual DNS destination
+# (172.19.0.2 when the TUN address is 172.19.0.1/30). Traffic to TCP/UDP 53 is
+# intercepted by the hijack-dns route rule and served by sing-box internally.
+$script:TunDnsAddress = $null
+
+function Get-TunPeerDnsAddress {
+    param([Parameter(Mandatory=$true)][string]$TunAddressCidr)
+
+    # For the default 172.19.0.1/30 TUN this returns 172.19.0.2.
+    # Keep the calculation byte-based: PowerShell can parse 0xFFFFFFFE as
+    # signed -2, which makes an explicit UInt32 cast fail before sing-box starts.
+    $ipText = ($TunAddressCidr -split '/')[0].Trim()
+    $ip = [System.Net.IPAddress]::Parse($ipText)
+    $bytes = $ip.GetAddressBytes()
+
+    if ($bytes.Length -ne 4) {
+        throw "Only an IPv4 TUN address is supported for Windows DNS setup: $TunAddressCidr"
+    }
+
+    $peer = New-Object byte[] 4
+    [Array]::Copy($bytes, $peer, 4)
+
+    for ($i = 3; $i -ge 0; $i--) {
+        if ($peer[$i] -lt 255) {
+            $peer[$i] = [byte]($peer[$i] + 1)
+            return ([System.Net.IPAddress]::new($peer)).ToString()
+        }
+        $peer[$i] = 0
+    }
+
+    throw "Cannot derive a DNS address from TUN address: $TunAddressCidr"
+}
+
+function Get-SingBoxTunDnsAddress {
+    if (-not (Test-Path $configPath)) { throw "Config not found: $configPath" }
+
+    try {
+        $cfg = Get-Content -Path $configPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        $tun = @($cfg.inbounds | Where-Object { $_.type -eq "tun" -and $_.tag -eq "tun-in" }) | Select-Object -First 1
+        if (-not $tun -or -not $tun.address -or $tun.address.Count -lt 1) {
+            throw "TUN inbound/address is missing from sing-box.json"
+        }
+        return Get-TunPeerDnsAddress -TunAddressCidr ([string]$tun.address[0])
+    } catch {
+        throw "Unable to derive the Windows TUN DNS address: $($_.Exception.Message)"
+    }
+}
+
+function Clear-SingBoxTunDns {
+    try {
+        $adapter = Get-NetAdapter -Name "singbox-tun0" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($adapter) {
+            Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ResetServerAddresses -ErrorAction SilentlyContinue
+            Write-AppLog "Restored automatic DNS on the TUN adapter." "INFO"
+        }
+    } catch {
+        Write-AppLog "TUN DNS cleanup warning: $($_.Exception.Message)" "WARN"
+    } finally {
+        $script:TunDnsAddress = $null
+    }
+}
+
+function Set-SingBoxTunDns {
+    if (-not (Test-IsAdmin)) { throw "Administrator privileges are required to configure TUN DNS." }
+
+    $dnsAddress = Get-SingBoxTunDnsAddress
+    $deadline = (Get-Date).AddSeconds(12)
+    $adapter = $null
+
+    do {
+        $adapter = Get-NetAdapter -Name "singbox-tun0" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($adapter) { break }
+        Start-Sleep -Milliseconds 250
+    } while ((Get-Date) -lt $deadline)
+
+    if (-not $adapter) {
+        throw "The singbox-tun0 adapter was not created within 12 seconds. Check singbox.stderr.log."
+    }
+
+    try {
+        # Use only the TUN adapter. Existing DNS settings on Ethernet/Wi-Fi remain untouched.
+        Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ServerAddresses @($dnsAddress) -ErrorAction Stop
+        # Prefer the TUN DNS interface while it is active without changing any physical adapter.
+        Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -InterfaceMetric 5 -ErrorAction SilentlyContinue | Out-Null
+        Clear-DnsClientCache -ErrorAction SilentlyContinue
+        $script:TunDnsAddress = $dnsAddress
+        Write-AppLog "Configured Windows DNS on $($adapter.Name): $dnsAddress (hijacked by sing-box)." "INFO"
+    } catch {
+        throw "Failed to configure DNS on the TUN adapter: $($_.Exception.Message)"
+    }
+}
+
+function Try-ConfigureSingBoxTunDnsOnce {
+    if (-not (Test-IsAdmin)) { throw "Administrator privileges are required to configure TUN DNS." }
+
+    $adapter = Get-NetAdapter -Name "singbox-tun0" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $adapter) { return $false }
+
+    $dnsAddress = Get-SingBoxTunDnsAddress
+    Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex -ServerAddresses @($dnsAddress) -ErrorAction Stop
+    Set-NetIPInterface -InterfaceIndex $adapter.ifIndex -AddressFamily IPv4 -InterfaceMetric 5 -ErrorAction SilentlyContinue | Out-Null
+    Clear-DnsClientCache -ErrorAction SilentlyContinue
+    $script:TunDnsAddress = $dnsAddress
+    Write-AppLog "Configured Windows DNS on $($adapter.Name): $dnsAddress (hijacked by sing-box)." "INFO"
+    return $true
+}
+
 function Reset-SingBoxNetworkState {
     if (-not (Test-IsAdmin)) { throw "Administrator privileges are required." }
+    Clear-SingBoxTunDns
     Remove-SingBoxTunRoutes -Pattern "singbox-tun*"
     Remove-LingeringSingBoxTunAdapters -Pattern "singbox-tun*"
     Start-Sleep -Milliseconds 300
@@ -320,6 +443,9 @@ function Get-WintunLatestRelease {
 # Ensure dependencies
 # --------------------------
 function Ensure-Dependencies {
+    # The bin directory can have been removed by an incomplete cleanup or antivirus.
+    New-Item -ItemType Directory -Path $binDir -Force | Out-Null
+
     if (-not (Test-Path $singBoxExe)) {
         $rel = Get-SingBoxLatestRelease
         $tmpZip  = Join-Path $env:TEMP ("singbox_{0}.zip" -f $rel.version)
@@ -377,7 +503,8 @@ function Ensure-Dependencies {
 # ss:// parsing
 # --------------------------
 function Remove-HiddenChars {
-    param([Parameter(Mandatory=$true)][string]$s)
+    param([AllowNull()][AllowEmptyString()][string]$s)
+    if ($null -eq $s) { return "" }
     return ($s -replace "[\uFEFF\u200B\u200C\u200D]", "").Trim()
 }
 
@@ -456,6 +583,27 @@ function Decode-SSUri {
     }
 }
 
+function Test-TcpEndpoint {
+    param(
+        [Parameter(Mandatory=$true)][string]$HostName,
+        [Parameter(Mandatory=$true)][int]$Port,
+        [int]$TimeoutMilliseconds = 5000
+    )
+
+    $client = [System.Net.Sockets.TcpClient]::new()
+    try {
+        $task = $client.ConnectAsync($HostName, $Port)
+        if (-not $task.Wait($TimeoutMilliseconds)) { return $false }
+        if ($task.IsFaulted) { return $false }
+        return $client.Connected
+    } catch {
+        return $false
+    } finally {
+        try { $client.Close() } catch {}
+        try { $client.Dispose() } catch {}
+    }
+}
+
 # --------------------------
 # sing-box config generation
 # --------------------------
@@ -479,11 +627,60 @@ function New-SingBoxConfigObject {
         [Parameter(Mandatory=$true)][string]$LogLevel
     )
 
-    $routeRules = @(@{ ip_is_private = $true; outbound = "direct" })
+    # sing-box 1.13+ no longer accepts legacy inbound fields such as
+    # inbound.sniff. Sniffing is now a route rule action.
+    # Keep DNS direct. Forwarding Windows DNS through the proxy or hijacking it
+    # into the sing-box DNS module has proven slow and causes ERR_NAME_NOT_RESOLVED
+    # when the Shadowsocks endpoint is unstable.
+    $routeRules = @(
+        @{
+            inbound = "tun-in"
+            action  = "sniff"
+        }
+    )
+
+    $serverIp = $null
+    if ([System.Net.IPAddress]::TryParse([string]$SS.server, [ref]$serverIp)) {
+        $prefix = if ($serverIp.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetworkV6) { 128 } else { 32 }
+        $routeRules += @{
+            ip_cidr  = @("$($SS.server)/$prefix")
+            action   = "route"
+            outbound = "direct"
+        }
+    } else {
+        $routeRules += @{
+            domain   = @([string]$SS.server)
+            action   = "route"
+            outbound = "direct"
+        }
+    }
+
+    $routeRules += @(
+        @{
+            inbound = "tun-in"
+            port    = 53
+            action  = "route"
+            outbound = "direct"
+        },
+        @{
+            ip_is_private = $true
+            action        = "route"
+            outbound      = "direct"
+        }
+    )
+
+    # Resolve DNS directly. Routing DNS-over-HTTPS through the same Shadowsocks
+    # outbound makes Windows name resolution depend on proxy health and can
+    # surface as ERR_NAME_NOT_RESOLVED when the endpoint is slow or unreachable.
+    $bootstrapResolver = @{
+        server   = "dns-bootstrap"
+        strategy = "ipv4_only"
+    }
 
     $routeObj = @{
-        rules = $routeRules
-        final = $SS.tag
+        rules                   = $routeRules
+        final                   = $SS.tag
+        default_domain_resolver = $bootstrapResolver
     }
 
     if ($AutoDetectInterface) { $routeObj.auto_detect_interface = $true }
@@ -492,11 +689,25 @@ function New-SingBoxConfigObject {
     @{
         log = @{
             level = $LogLevel
+            # Relative to the process working directory (set to the script folder).
             output = "singbox.log"
             timestamp = $true
         }
+        # DNS is deliberately direct. Do not set detour="direct" here: sing-box
+        # 1.13+ rejects a DNS UDP server detouring to an empty direct outbound at
+        # runtime. With no detour, these DNS queries are dialed directly.
         dns = @{
-            servers = @(@{ address = $DnsServer })
+            servers = @(
+                @{
+                    tag         = "dns-bootstrap"
+                    type        = "udp"
+                    server      = $DnsServer
+                    server_port = 53
+                }
+            )
+            final           = "dns-bootstrap"
+            strategy        = "prefer_ipv4"
+            reverse_mapping = $true
         }
         route = $routeObj
         inbounds = @(
@@ -508,7 +719,6 @@ function New-SingBoxConfigObject {
                 mtu=$TunMtu
                 auto_route=$AutoRoute
                 strict_route=$StrictRoute
-                sniff=$true
             }
         )
         outbounds = @(
@@ -519,9 +729,9 @@ function New-SingBoxConfigObject {
                 server_port=[int]$SS.server_port
                 method=$SS.method
                 password=$SS.password
+                domain_resolver = $bootstrapResolver
             },
-            @{ type="direct"; tag="direct" },
-            @{ type="block";  tag="block"  }
+            @{ type="direct"; tag="direct" }
         )
     }
 }
@@ -529,38 +739,111 @@ function New-SingBoxConfigObject {
 # --------------------------
 # sing-box process management
 # --------------------------
-$global:SingBoxProcess  = $null
-$global:DesiredActive   = $false
-$global:WatchdogTimer   = $null
-$global:RestartCount    = 0
-$global:NextRestartAt   = Get-Date
-$script:WatchdogUpdateUi = $null
+$global:SingBoxProcess    = $null
+$global:DesiredActive     = $false
+$global:WatchdogTimer     = $null
+$global:RestartCount      = 0
+$global:NextRestartAt     = Get-Date
+$script:WatchdogUpdateUi  = $null
+$script:StartedAt         = $null
+
+function Get-SingBoxStderrTail {
+    param([int]$Lines = 80)
+
+    if (-not (Test-Path $stderrPath)) { return "No stderr log was created." }
+
+    try {
+        $detail = (Get-Content -Path $stderrPath -Tail $Lines -ErrorAction Stop | Out-String).Trim()
+        if ([string]::IsNullOrWhiteSpace($detail)) { return "sing-box exited without writing to stderr." }
+        return $detail
+    } catch {
+        return "Unable to read stderr log: $($_.Exception.Message)"
+    }
+}
+
+function Test-SingBoxConfig {
+    if (-not (Test-Path $singBoxExe)) { throw "sing-box.exe not found: $singBoxExe" }
+    if (-not (Test-Path $configPath)) { throw "Config not found. Generate it first." }
+
+    $result = & $singBoxExe check -c $configPath 2>&1
+    $exitCode = $LASTEXITCODE
+
+    if ($exitCode -ne 0) {
+        $detail = ($result | Out-String).Trim()
+        if ([string]::IsNullOrWhiteSpace($detail)) { $detail = "sing-box check failed with exit code $exitCode." }
+        Write-AppLog "Config validation failed: $detail" "ERROR"
+        throw "sing-box configuration is invalid:`r`n$detail"
+    }
+
+    Write-AppLog "sing-box configuration validation passed" "INFO"
+}
+
+function Clear-SingBoxSessionLogs {
+    $enc = New-Object System.Text.UTF8Encoding($false)
+    foreach ($path in @($stdoutPath, $stderrPath)) {
+        try { [System.IO.File]::WriteAllText($path, "", $enc) } catch {}
+    }
+}
+
+function Test-SingBoxTunDns {
+    param([int]$TimeoutSeconds = 12)
+
+    if ([string]::IsNullOrWhiteSpace($script:TunDnsAddress)) {
+        throw "The virtual TUN DNS address was not configured."
+    }
+
+    $script:LastTunDnsSelfTestWarning = $null
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $lastError = $null
+
+    do {
+        try {
+            # Query the virtual DNS address explicitly. This proves that Windows,
+            # Wintun, hijack-dns, the upstream resolver and the proxy can complete
+            # one end-to-end DNS request.
+            $answer = Resolve-DnsName -Name "example.com" -Type A -Server $script:TunDnsAddress -DnsOnly -NoHostsFile -ErrorAction Stop
+            if ($answer) {
+                Write-AppLog "TUN DNS self-test passed via $script:TunDnsAddress." "INFO"
+                return $true
+            }
+        } catch {
+            $lastError = $_.Exception.Message
+            Start-Sleep -Milliseconds 750
+        }
+    } while ((Get-Date) -lt $deadline)
+
+    $tail = Get-SingBoxStderrTail -Lines 30
+    $script:LastTunDnsSelfTestWarning = "TUN started, but DNS self-test failed for $script:TunDnsAddress. $lastError`r`nThis usually means the Shadowsocks server, port, password, method, or remote DNS path is not responding.`r`nSing-box stderr:`r`n$tail"
+    Write-AppLog $script:LastTunDnsSelfTestWarning "WARN"
+    return $false
+}
 
 function Start-SingBox {
     if ($global:SingBoxProcess -and -not $global:SingBoxProcess.HasExited) { return }
-
-    try { Reset-SingBoxNetworkState } catch { Write-AppLog "Pre-start cleanup failed: $($_.Exception.Message)" "WARN" }
 
     if (-not (Test-Path $singBoxExe)) { throw "sing-box.exe not found: $singBoxExe" }
     if (-not (Test-Path $wintunDll))  { throw "wintun.dll not found: $wintunDll" }
     if (-not (Test-Path $configPath)) { throw "Config not found. Generate it first." }
 
-    Ensure-File -Path $stdoutPath
-    Ensure-File -Path $stderrPath
+    # Stop invalid configurations before creating a TUN adapter or starting the watchdog.
+    Test-SingBoxConfig
+    Clear-SingBoxSessionLogs
 
-    $args = @("run", "-c", ("`"" + $configPath + "`""))
+    $args = @("run", "-c", "sing-box.json")
 
     $p = Start-Process `
         -FilePath $singBoxExe `
         -ArgumentList $args `
-        -WorkingDirectory $binDir `
+        -WorkingDirectory $scriptDir `
         -WindowStyle Hidden `
         -PassThru `
         -RedirectStandardOutput $stdoutPath `
         -RedirectStandardError  $stderrPath
 
     $global:SingBoxProcess = $p
-    Write-AppLog "sing-box started. PID=$($p.Id)" "INFO"
+    $script:StartedAt = Get-Date
+
+    Write-AppLog "sing-box started. PID=$($p.Id); Windows TUN DNS configuration pending." "INFO"
 }
 
 function Stop-SingBox {
@@ -576,6 +859,17 @@ function Stop-SingBox {
 
     try { Reset-SingBoxNetworkState } catch { Write-AppLog "Post-stop cleanup failed: $($_.Exception.Message)" "WARN" }
     $global:SingBoxProcess = $null
+    $script:StartedAt = $null
+}
+
+function Schedule-SingBoxRestart {
+    param([Parameter(Mandatory=$true)][string]$Reason)
+
+    $global:RestartCount++
+    $delay = [Math]::Min(30, [Math]::Max(2, [int]([Math]::Pow(2, [Math]::Min(4, $global:RestartCount - 1)))))
+    $global:NextRestartAt = (Get-Date).AddSeconds($delay)
+
+    Write-AppLog "$Reason. Retry scheduled in $delay s (attempt $($global:RestartCount))" "WARN"
 }
 
 function Start-Watchdog {
@@ -591,26 +885,46 @@ function Start-Watchdog {
         try { if ($script:WatchdogUpdateUi) { & $script:WatchdogUpdateUi } } catch {}
 
         if (-not $global:DesiredActive) { return }
-        if (-not $global:SingBoxProcess) { return }
 
-        if ($global:SingBoxProcess.HasExited) {
+        # A running process resets the restart backoff only after one minute of stable uptime.
+        if ($global:SingBoxProcess -and -not $global:SingBoxProcess.HasExited) {
+            if ($script:StartedAt -and (((Get-Date) - $script:StartedAt).TotalSeconds -ge 60)) {
+                $global:RestartCount = 0
+            }
+            return
+        }
+
+        # Process has just exited: log its real error once, clean up, and schedule a future retry.
+        if ($global:SingBoxProcess -and $global:SingBoxProcess.HasExited) {
             $exit = $global:SingBoxProcess.ExitCode
-            Write-AppLog "sing-box exited (code=$exit) while Active=true" "WARN"
+            $detail = Get-SingBoxStderrTail
+            Write-AppLog "sing-box exited (code=$exit). stderr: $detail" "ERROR"
+            $global:SingBoxProcess = $null
+            $script:StartedAt = $null
 
             try { Reset-SingBoxNetworkState } catch { Write-AppLog "Watchdog cleanup failed: $($_.Exception.Message)" "WARN" }
+            Schedule-SingBoxRestart -Reason "sing-box stopped"
+            return
+        }
 
-            $now = Get-Date
-            if ($now -lt $global:NextRestartAt) { return }
+        # No process exists. Honor the scheduled delay before trying again.
+        if ((Get-Date) -lt $global:NextRestartAt) { return }
 
-            $global:RestartCount++
-            $delay = [Math]::Min(30, [Math]::Max(2, [int]([Math]::Pow(2, [Math]::Min(4, $global:RestartCount-1)))) )
-            $global:NextRestartAt = $now.AddSeconds($delay)
+        try {
+            Start-SingBox
+            Write-AppLog "Watchdog restarted sing-box" "INFO"
+        } catch {
+            $detail = $_.Exception.Message
+            Write-AppLog "Watchdog restart failed: $detail" "ERROR"
 
-            Write-AppLog "Watchdog restarting in $delay s (attempt $($global:RestartCount))" "INFO"
-            try { Start-SingBox } catch { Write-AppLog "Watchdog restart failed: $($_.Exception.Message)" "ERROR" }
-        } else {
-            $global:RestartCount = 0
-            $global:NextRestartAt = Get-Date
+            # A configuration validation failure will not improve by retrying it endlessly.
+            if ($detail -match "configuration is invalid|Config not found") {
+                $global:DesiredActive = $false
+                Write-AppLog "Automatic restart disabled until the configuration is corrected." "ERROR"
+                return
+            }
+
+            Schedule-SingBoxRestart -Reason "Watchdog restart failed"
         }
     })
 
@@ -711,7 +1025,7 @@ $lblHeader.ForeColor = $COL_TEXT
 $lblHeader.BackColor = [System.Drawing.Color]::Transparent
 
 $lblSub = New-Object System.Windows.Forms.Label
-$lblSub.Text = "Download binaries, generate config, start/stop the TUN. Use Reset network if connectivity breaks."
+$lblSub.Text = "Download binaries, generate config, start/stop the TUN. DNS is set automatically on the TUN adapter."
 $lblSub.Font = $fontUi
 $lblSub.Location = New-Object System.Drawing.Point(18, 44)
 $lblSub.Size = New-Object System.Drawing.Size(900, 18)
@@ -751,7 +1065,7 @@ $txtSS = New-TextBox -X 190 -Y 40 -W 680 -Text ""
 $txtSS.Anchor = "Top,Left,Right"
 $cardConn.Controls.Add($txtSS)
 
-$cardConn.Controls.Add((New-Label -Text "DNS" -X 12 -Y 76 -W 60 -Color $COL_MUTED))
+$cardConn.Controls.Add((New-Label -Text "DoH DNS" -X 12 -Y 76 -W 72 -Color $COL_MUTED))
 $txtDns = New-TextBox -X 190 -Y 74 -W 160 -Text "1.1.1.1"
 $cardConn.Controls.Add($txtDns)
 
@@ -848,10 +1162,32 @@ $chkShowAdvanced.Add_CheckedChanged({
     & $script:Layout
 })
 
-$chkAutoDetect.Add_CheckedChanged({ $cmbIface.Enabled = (-not [bool]$chkAutoDetect.Checked) })
 $cmbIface.Enabled = (-not [bool]$chkAutoDetect.Checked)
 
 $cardAdv.Controls.AddRange(@($chkShowAdvanced,$chkAutoRoute,$chkAutoDetect,$chkStrictRoute,$lblIface,$cmbIface))
+
+function Set-ConfigDirty {
+    if ($script:ConfigReady) {
+        $script:ConfigReady = $false
+        if (Get-Variable -Name txtOutput -Scope Script -ErrorAction SilentlyContinue) {
+            Ui-Append "[$(New-Timestamp)] Config changed. Generate config again before Start."
+        }
+    }
+    Update-ButtonsState
+}
+
+$txtSS.Add_TextChanged({ Set-ConfigDirty })
+$txtDns.Add_TextChanged({ Set-ConfigDirty })
+$txtTunAddr.Add_TextChanged({ Set-ConfigDirty })
+$numMtu.Add_ValueChanged({ Set-ConfigDirty })
+$cmbLog.Add_SelectedIndexChanged({ Set-ConfigDirty })
+$chkAutoRoute.Add_CheckedChanged({ Set-ConfigDirty })
+$chkAutoDetect.Add_CheckedChanged({
+    $cmbIface.Enabled = (-not [bool]$chkAutoDetect.Checked)
+    Set-ConfigDirty
+})
+$chkStrictRoute.Add_CheckedChanged({ Set-ConfigDirty })
+$cmbIface.Add_SelectedIndexChanged({ Set-ConfigDirty })
 
 $txtOutput = New-Object System.Windows.Forms.TextBox
 $txtOutput.Font = $fontMono
@@ -1002,9 +1338,13 @@ function Set-StatusBadge([string]$text) {
 }
 
 function Update-ButtonsState {
-    $hasConfig = Test-Path $configPath
     $isRunning = ($global:SingBoxProcess -and -not $global:SingBoxProcess.HasExited)
-    $btnStart.Enabled = $hasConfig -and (-not $isRunning)
+    $hasBinaries = ((Test-Path $singBoxExe) -and (Test-Path $wintunDll))
+    $hasUri = -not [string]::IsNullOrWhiteSpace((Remove-HiddenChars -s $txtSS.Text))
+
+    $btnDeps.Enabled  = -not $isRunning
+    $btnGen.Enabled   = $hasBinaries -and $hasUri -and (-not $isRunning)
+    $btnStart.Enabled = $hasBinaries -and $hasUri -and $script:ConfigReady -and (Test-Path $configPath) -and (-not $isRunning)
     $btnStop.Enabled  = $isRunning
 }
 
@@ -1039,6 +1379,54 @@ function Update-UiState {
 $uiTimer.Add_Tick({ Update-UiState })
 $uiTimer.Start()
 
+function Stop-TunDnsConfigurationPolling {
+    if ($script:TunDnsConfigTimer) {
+        try { $script:TunDnsConfigTimer.Stop() } catch {}
+        try { $script:TunDnsConfigTimer.Dispose() } catch {}
+        $script:TunDnsConfigTimer = $null
+    }
+    $script:TunDnsConfigDeadline = $null
+}
+
+function Start-TunDnsConfigurationPolling {
+    Stop-TunDnsConfigurationPolling
+    $script:TunDnsConfigDeadline = (Get-Date).AddSeconds(20)
+
+    $script:TunDnsConfigTimer = New-Object System.Windows.Forms.Timer
+    $script:TunDnsConfigTimer.Interval = 1000
+    $script:TunDnsConfigTimer.Add_Tick({
+        try {
+            $isRunning = ($global:SingBoxProcess -and -not $global:SingBoxProcess.HasExited)
+            if (-not $isRunning) {
+                Stop-TunDnsConfigurationPolling
+                return
+            }
+
+            if (Try-ConfigureSingBoxTunDnsOnce) {
+                Ui-Append "[$(New-Timestamp)] OK: TUN DNS configured on singbox-tun0."
+                Stop-TunDnsConfigurationPolling
+                Update-UiState
+                return
+            }
+
+            if ((Get-Date) -ge $script:TunDnsConfigDeadline) {
+                $msg = "singbox-tun0 was not found within 20 seconds. sing-box is still running; use Reset network if the adapter is stale."
+                Ui-Append "[$(New-Timestamp)] WARNING: $msg"
+                Write-AppLog $msg "WARN"
+                Stop-TunDnsConfigurationPolling
+            }
+        } catch {
+            $msg = "TUN DNS configuration warning: $($_.Exception.Message)"
+            Ui-Append "[$(New-Timestamp)] WARNING: $msg"
+            Write-AppLog $msg "WARN"
+            Stop-TunDnsConfigurationPolling
+        } finally {
+            Update-UiState
+        }
+    })
+    $script:TunDnsConfigTimer.Start()
+}
+
 function Validate-InputsOrThrow {
     $ssText = Remove-HiddenChars -s $txtSS.Text
     if (-not $ssText) { throw "Please paste a valid ss:// URI." }
@@ -1048,7 +1436,9 @@ function Validate-InputsOrThrow {
     }
 
     $dns = ($txtDns.Text.Trim())
-    if (-not $dns) { throw "DNS cannot be empty." }
+    if ($dns -notin @("1.1.1.1", "1.0.0.1")) {
+        throw "For this DNS-over-HTTPS profile, use Cloudflare 1.1.1.1 or 1.0.0.1."
+    }
 
     $tun = ($txtTunAddr.Text.Trim())
     if (-not $tun -or ($tun -notmatch "^\d{1,3}(\.\d{1,3}){3}/\d{1,2}$")) {
@@ -1063,6 +1453,7 @@ $btnDeps.Add_Click({
     try {
         Ui-Append "[$(New-Timestamp)] Downloading dependencies..."
         Ensure-Dependencies
+        $script:ConfigReady = $false
         Ui-Append "[$(New-Timestamp)] OK: Dependencies are ready in $binDir"
         Write-AppLog "Dependencies updated" "INFO"
     } catch {
@@ -1097,9 +1488,11 @@ $btnGen.Add_Click({
             -LogLevel ([string]$cmbLog.SelectedItem)
 
         Write-SingBoxConfig -ConfigObject $cfgObj
+        $script:ConfigReady = $true
         Ui-Append "[$(New-Timestamp)] Config written: $configPath (UTF-8 no BOM)"
         Write-AppLog "Config written: $configPath" "INFO"
     } catch {
+        $script:ConfigReady = $false
         $msg = $_.Exception.Message
         Ui-Append "[$(New-Timestamp)] ERROR: $msg"
         Write-AppLog "Config error: $msg" "ERROR"
@@ -1117,8 +1510,21 @@ $btnStart.Add_Click({
             return
         }
 
-        Ensure-Dependencies
+        if (-not ((Test-Path $singBoxExe) -and (Test-Path $wintunDll))) {
+            throw "Step 1 required: click 'Download / Update binaries' first."
+        }
+        Validate-InputsOrThrow
+        if (-not $script:ConfigReady -or -not (Test-Path $configPath)) {
+            throw "Step 3 required: click 'Generate config' before Start."
+        }
+
         if (-not (Test-Path $configPath)) { throw "Config not found. Click 'Generate config' first." }
+
+        $ssForPreflight = Decode-SSUri -Uri (Remove-HiddenChars -s $txtSS.Text)
+        Ui-Append "[$(New-Timestamp)] Checking Shadowsocks endpoint $($ssForPreflight.server):$($ssForPreflight.server_port)..."
+        if (-not (Test-TcpEndpoint -HostName $ssForPreflight.server -Port ([int]$ssForPreflight.server_port) -TimeoutMilliseconds 1500)) {
+            throw "Shadowsocks endpoint is not reachable: $($ssForPreflight.server):$($ssForPreflight.server_port). Check the URI, server, port, firewall, or network before Start."
+        }
 
         $global:DesiredActive = $true
         Set-StatusBadge "Starting"
@@ -1132,6 +1538,7 @@ $btnStart.Add_Click({
 
         Start-Watchdog -UpdateUi { Update-UiState }
     } catch {
+        $global:DesiredActive = $false
         $msg = $_.Exception.Message
         Ui-Append "[$(New-Timestamp)] ERROR: $msg"
         Write-AppLog "Start error: $msg" "ERROR"
@@ -1155,6 +1562,7 @@ $btnStop.Add_Click({
         Set-StatusBadge "Stopping"
         Update-ButtonsState
 
+        Stop-TunDnsConfigurationPolling
         Stop-SingBox
         $script:StartedAt = $null
 
@@ -1181,6 +1589,7 @@ $btnResetNet.Add_Click({
         if ($res -ne [System.Windows.Forms.DialogResult]::Yes) { return }
 
         Ui-Append "[$(New-Timestamp)] Resetting network state (singbox-tun*)..."
+        Stop-TunDnsConfigurationPolling
         Reset-SingBoxNetworkState
         Ui-Append "[$(New-Timestamp)] OK: network state cleaned."
         Write-AppLog "Network reset executed from GUI" "INFO"
@@ -1208,6 +1617,7 @@ $btnClearUiLog.Add_Click({ $txtOutput.Clear() })
 $form.Add_FormClosing({
     try {
         $global:DesiredActive = $false
+        Stop-TunDnsConfigurationPolling
         Stop-Watchdog
         Stop-SingBox
     } catch {}
