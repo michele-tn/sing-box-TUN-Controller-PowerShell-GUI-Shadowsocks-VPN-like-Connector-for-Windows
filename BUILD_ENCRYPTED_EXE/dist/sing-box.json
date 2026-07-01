@@ -1,0 +1,90 @@
+{
+    "dns":  {
+                "reverse_mapping":  true,
+                "servers":  [
+                                {
+                                    "server":  "1.1.1.1",
+                                    "type":  "udp",
+                                    "tag":  "dns-bootstrap",
+                                    "server_port":  53
+                                },
+                                {
+                                    "tag":  "dns-main",
+                                    "server_port":  443,
+                                    "server":  "1.1.1.1",
+                                    "path":  "/dns-query",
+                                    "type":  "https",
+                                    "detour":  "Seychelles"
+                                }
+                            ],
+                "final":  "dns-main",
+                "strategy":  "prefer_ipv4"
+            },
+    "outbounds":  [
+                      {
+                          "tag":  "Seychelles",
+                          "password":  "RexnBgU7EV5ADxG",
+                          "server_port":  7002,
+                          "server":  "156.244.32.9",
+                          "method":  "aes-256-gcm",
+                          "type":  "shadowsocks",
+                          "domain_resolver":  {
+                                                  "server":  "dns-bootstrap",
+                                                  "strategy":  "ipv4_only"
+                                              }
+                      },
+                      {
+                          "tag":  "direct",
+                          "type":  "direct"
+                      }
+                  ],
+    "inbounds":  [
+                     {
+                         "tag":  "tun-in",
+                         "interface_name":  "singbox-tun0",
+                         "strict_route":  true,
+                         "mtu":  1500,
+                         "auto_route":  true,
+                         "type":  "tun",
+                         "address":  [
+                                         "172.19.0.1/30"
+                                     ]
+                     }
+                 ],
+    "log":  {
+                "output":  "singbox.log",
+                "timestamp":  true,
+                "level":  "info"
+            },
+    "route":  {
+                  "default_domain_resolver":  {
+                                                  "server":  "dns-bootstrap",
+                                                  "strategy":  "ipv4_only"
+                                              },
+                  "auto_detect_interface":  true,
+                  "final":  "Seychelles",
+                  "rules":  [
+                                {
+                                    "action":  "sniff",
+                                    "inbound":  "tun-in"
+                                },
+                                {
+                                    "outbound":  "direct",
+                                    "ip_cidr":  [
+                                                    "156.244.32.9/32"
+                                                ],
+                                    "action":  "route"
+                                },
+                                {
+                                    "port":  53,
+                                    "action":  "hijack-dns",
+                                    "inbound":  "tun-in"
+                                },
+                                {
+                                    "outbound":  "direct",
+                                    "ip_is_private":  true,
+                                    "action":  "route"
+                                }
+                            ]
+              }
+}

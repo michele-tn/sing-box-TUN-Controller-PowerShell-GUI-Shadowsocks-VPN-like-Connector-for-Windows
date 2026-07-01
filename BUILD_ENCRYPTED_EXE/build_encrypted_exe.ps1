@@ -8,6 +8,7 @@ $distDir = Join-Path $root "dist"
 $loaderCs = Join-Path $buildDir "SingBoxTunGui.Loader.cs"
 $exePath = Join-Path $distDir "SingBoxTunGui.exe"
 $iconPath = Join-Path $buildDir "SingBoxTunGui.ico"
+$manifestPath = Join-Path $buildDir "SingBoxTunGui.exe.manifest"
 $certPath = Join-Path $distDir "SingBoxTunGui_CodeSigning.cer"
 $hashPath = "$exePath.sha256"
 $certSubject = "CN=SingBoxTunGui Local Code Signing"
@@ -111,8 +112,24 @@ function Write-Sha256File {
 
 New-SingBoxTunGuiIcon -Path $iconPath
 
+$manifest = @"
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <assemblyIdentity version="1.0.0.0" processorArchitecture="*" name="SingBoxTunGui" type="win32" />
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+    <security>
+      <requestedPrivileges>
+        <requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
+      </requestedPrivileges>
+    </security>
+  </trustInfo>
+</assembly>
+"@
+[System.IO.File]::WriteAllText($manifestPath, $manifest, [System.Text.Encoding]::UTF8)
+
 $script = [System.IO.File]::ReadAllText($source, [System.Text.Encoding]::UTF8)
 $script = $script -replace '\$scriptDir\s*=\s*Split-Path -Parent \$MyInvocation\.MyCommand\.Path', '$scriptDir  = if ($env:SINGBOXTUNGUI_APPDIR) { $env:SINGBOXTUNGUI_APPDIR } else { Split-Path -Parent $MyInvocation.MyCommand.Path }'
+$script = $script -replace '\$scriptDir\s*=\s*\$PSScriptRoot', '$scriptDir  = if ($env:SINGBOXTUNGUI_APPDIR) { $env:SINGBOXTUNGUI_APPDIR } else { $PSScriptRoot }'
 
 $plainBytes = [System.Text.Encoding]::UTF8.GetBytes($script)
 $aes = [System.Security.Cryptography.Aes]::Create()
@@ -186,6 +203,7 @@ internal static class Program
                 WorkingDirectory = appDir
             };
             info.EnvironmentVariables["SINGBOXTUNGUI_APPDIR"] = appDir;
+            info.EnvironmentVariables["SINGBOXTUNGUI_EXE"] = Application.ExecutablePath;
 
             using (Process process = Process.Start(info))
             {
@@ -249,7 +267,7 @@ if (-not $csc) {
     throw "csc.exe not found."
 }
 
-& $csc /nologo /optimize+ /target:winexe /platform:anycpu /win32icon:$iconPath /out:$exePath /reference:System.Windows.Forms.dll $loaderCs
+& $csc /nologo /optimize+ /target:winexe /platform:anycpu /win32icon:$iconPath /win32manifest:$manifestPath /out:$exePath /reference:System.Windows.Forms.dll $loaderCs
 if ($LASTEXITCODE -ne 0) {
     throw "C# compilation failed with exit code $LASTEXITCODE."
 }

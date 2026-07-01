@@ -98,6 +98,26 @@ function Test-IsAdmin {
     } catch { $false }
 }
 
+function Start-ElevatedInstance {
+    try {
+        if ($env:SINGBOXTUNGUI_EXE -and (Test-Path -LiteralPath $env:SINGBOXTUNGUI_EXE)) {
+            Start-Process -FilePath $env:SINGBOXTUNGUI_EXE -Verb RunAs -WorkingDirectory $scriptDir | Out-Null
+            return $true
+        }
+
+        if ($PSCommandPath -and (Test-Path -LiteralPath $PSCommandPath)) {
+            $powershell = Join-Path $env:WINDIR "System32\WindowsPowerShell\v1.0\powershell.exe"
+            $args = @("-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-STA", "-File", $PSCommandPath)
+            Start-Process -FilePath $powershell -ArgumentList $args -Verb RunAs -WorkingDirectory $scriptDir | Out-Null
+            return $true
+        }
+    } catch {
+        Write-AppLog "Elevation request failed: $($_.Exception.Message)" "ERROR"
+    }
+
+    return $false
+}
+
 # --------------------------
 # Network cleanup
 # --------------------------
@@ -614,6 +634,27 @@ function Write-SingBoxConfig {
     [System.IO.File]::WriteAllText($configPath, $json, $enc)
 }
 
+function Get-SingBoxSemanticVersion {
+    if (-not (Test-Path $singBoxExe)) { return $null }
+
+    try {
+        $output = (& $singBoxExe version 2>$null | Out-String)
+        $match = [regex]::Match($output, '(?<ver>\d+\.\d+\.\d+)')
+        if ($match.Success) {
+            return [version]$match.Groups["ver"].Value
+        }
+    } catch {
+        Write-AppLog "Unable to detect sing-box version for optional DNS mode fields: $($_.Exception.Message)" "WARN"
+    }
+
+    return $null
+}
+
+function Test-SingBoxSupportsTunDnsMode {
+    $version = Get-SingBoxSemanticVersion
+    return ($version -and $version -ge [version]"1.14.0")
+}
+
 function New-SingBoxConfigObject {
     param(
         [Parameter(Mandatory=$true)][hashtable]$SS,
@@ -629,9 +670,6 @@ function New-SingBoxConfigObject {
 
     # sing-box 1.13+ no longer accepts legacy inbound fields such as
     # inbound.sniff. Sniffing is now a route rule action.
-    # Keep DNS direct. Forwarding Windows DNS through the proxy or hijacking it
-    # into the sing-box DNS module has proven slow and causes ERR_NAME_NOT_RESOLVED
-    # when the Shadowsocks endpoint is unstable.
     $routeRules = @(
         @{
             inbound = "tun-in"
@@ -659,8 +697,7 @@ function New-SingBoxConfigObject {
         @{
             inbound = "tun-in"
             port    = 53
-            action  = "route"
-            outbound = "direct"
+            action  = "hijack-dns"
         },
         @{
             ip_is_private = $true
@@ -669,12 +706,26 @@ function New-SingBoxConfigObject {
         }
     )
 
-    # Resolve DNS directly. Routing DNS-over-HTTPS through the same Shadowsocks
-    # outbound makes Windows name resolution depend on proxy health and can
-    # surface as ERR_NAME_NOT_RESOLVED when the endpoint is slow or unreachable.
+    # Resolve only bootstrap names directly. Normal system DNS is handled by the
+    # sing-box DNS module and sent to DoH through the Shadowsocks outbound.
     $bootstrapResolver = @{
         server   = "dns-bootstrap"
         strategy = "ipv4_only"
+    }
+
+    $tunInbound = @{
+        type="tun"
+        tag="tun-in"
+        interface_name="singbox-tun0"
+        address=@($TunAddressCidr)
+        mtu=$TunMtu
+        auto_route=$AutoRoute
+        strict_route=$StrictRoute
+    }
+
+    if (Test-SingBoxSupportsTunDnsMode) {
+        $tunInbound.dns_mode = "hijack"
+        $tunInbound.dns_address = @((Get-TunPeerDnsAddress -TunAddressCidr $TunAddressCidr))
     }
 
     $routeObj = @{
@@ -693,9 +744,6 @@ function New-SingBoxConfigObject {
             output = "singbox.log"
             timestamp = $true
         }
-        # DNS is deliberately direct. Do not set detour="direct" here: sing-box
-        # 1.13+ rejects a DNS UDP server detouring to an empty direct outbound at
-        # runtime. With no detour, these DNS queries are dialed directly.
         dns = @{
             servers = @(
                 @{
@@ -703,24 +751,22 @@ function New-SingBoxConfigObject {
                     type        = "udp"
                     server      = $DnsServer
                     server_port = 53
+                },
+                @{
+                    tag         = "dns-main"
+                    type        = "https"
+                    server      = $DnsServer
+                    server_port = 443
+                    path        = "/dns-query"
+                    detour      = $SS.tag
                 }
             )
-            final           = "dns-bootstrap"
+            final           = "dns-main"
             strategy        = "prefer_ipv4"
             reverse_mapping = $true
         }
         route = $routeObj
-        inbounds = @(
-            @{
-                type="tun"
-                tag="tun-in"
-                interface_name="singbox-tun0"
-                address=@($TunAddressCidr)
-                mtu=$TunMtu
-                auto_route=$AutoRoute
-                strict_route=$StrictRoute
-            }
-        )
+        inbounds = @($tunInbound)
         outbounds = @(
             @{
                 type="shadowsocks"
@@ -785,6 +831,61 @@ function Clear-SingBoxSessionLogs {
     }
 }
 
+function Get-SingBoxStrictRouteEnabled {
+    if (-not (Test-Path $configPath)) { return $false }
+
+    try {
+        $cfg = Get-Content -Path $configPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        $tun = @($cfg.inbounds | Where-Object { $_.type -eq "tun" -and $_.tag -eq "tun-in" }) | Select-Object -First 1
+        return ($tun -and [bool]$tun.strict_route)
+    } catch {
+        Write-AppLog "Unable to read strict_route from config for DNS leak check: $($_.Exception.Message)" "WARN"
+        return $false
+    }
+}
+
+function Get-WindowsDnsLeakWarnings {
+    $warnings = New-Object System.Collections.Generic.List[string]
+
+    try {
+        $tunAdapter = Get-NetAdapter -Name "singbox-tun0" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $tunAdapter) {
+            $warnings.Add("singbox-tun0 was not found during DNS leak check.")
+            return $warnings
+        }
+
+        $tunDns = Get-DnsClientServerAddress -InterfaceIndex $tunAdapter.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
+        $tunServers = @($tunDns.ServerAddresses)
+        if ($tunServers -notcontains $script:TunDnsAddress) {
+            $warnings.Add("singbox-tun0 DNS is not set to the virtual hijack address $script:TunDnsAddress.")
+        }
+
+        if (-not (Get-SingBoxStrictRouteEnabled)) {
+            $activeIfIndexes = @(
+                Get-NetAdapter -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Status -eq "Up" -and $_.Name -ne "singbox-tun0" -and $_.InterfaceDescription -notmatch "Loopback" } |
+                    ForEach-Object { $_.ifIndex }
+            )
+
+            $otherDns = @(
+                Get-DnsClientServerAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+                    Where-Object { $activeIfIndexes -contains $_.InterfaceIndex -and @($_.ServerAddresses).Count -gt 0 } |
+                    ForEach-Object {
+                        "{0}: {1}" -f $_.InterfaceAlias, ((@($_.ServerAddresses) | Where-Object { $_ }) -join ", ")
+                    }
+            )
+
+            if ($otherDns.Count -gt 0) {
+                $warnings.Add("strict_route is OFF and active non-TUN adapters still expose DNS servers: $($otherDns -join '; '). Windows may query them in parallel.")
+            }
+        }
+    } catch {
+        $warnings.Add("DNS leak check could not inspect Windows DNS state: $($_.Exception.Message)")
+    }
+
+    return $warnings
+}
+
 function Test-SingBoxTunDns {
     param([int]$TimeoutSeconds = 12)
 
@@ -804,6 +905,12 @@ function Test-SingBoxTunDns {
             $answer = Resolve-DnsName -Name "example.com" -Type A -Server $script:TunDnsAddress -DnsOnly -NoHostsFile -ErrorAction Stop
             if ($answer) {
                 Write-AppLog "TUN DNS self-test passed via $script:TunDnsAddress." "INFO"
+                $leakWarnings = @(Get-WindowsDnsLeakWarnings)
+                if ($leakWarnings.Count -gt 0) {
+                    $warningText = "DNS leak check warning: $($leakWarnings -join ' ')"
+                    $script:LastTunDnsSelfTestWarning = $warningText
+                    Write-AppLog $warningText "WARN"
+                }
                 return $true
             }
         } catch {
@@ -1065,7 +1172,7 @@ $txtSS = New-TextBox -X 190 -Y 40 -W 680 -Text ""
 $txtSS.Anchor = "Top,Left,Right"
 $cardConn.Controls.Add($txtSS)
 
-$cardConn.Controls.Add((New-Label -Text "DoH DNS" -X 12 -Y 76 -W 72 -Color $COL_MUTED))
+$cardConn.Controls.Add((New-Label -Text "DoH endpoint" -X 12 -Y 76 -W 110 -Color $COL_MUTED))
 $txtDns = New-TextBox -X 190 -Y 74 -W 160 -Text "1.1.1.1"
 $cardConn.Controls.Add($txtDns)
 
@@ -1437,7 +1544,7 @@ function Validate-InputsOrThrow {
 
     $dns = ($txtDns.Text.Trim())
     if ($dns -notin @("1.1.1.1", "1.0.0.1")) {
-        throw "For this DNS-over-HTTPS profile, use Cloudflare 1.1.1.1 or 1.0.0.1."
+        throw "For the Cloudflare DNS-over-HTTPS profile, use 1.1.1.1 or 1.0.0.1."
     }
 
     $tun = ($txtTunAddr.Text.Trim())
@@ -1503,10 +1610,13 @@ $btnGen.Add_Click({
 $btnStart.Add_Click({
     try {
         if (-not (Test-IsAdmin)) {
-            $msg = "Please start PowerShell as Administrator (required for TUN and route operations)."
-            Ui-Append "[$(New-Timestamp)] ERROR: $msg"
-            Write-AppLog $msg "ERROR"
-            [System.Windows.Forms.MessageBox]::Show($msg, "Administrator required", "OK", "Warning") | Out-Null
+            $msg = "Administrator privileges are required for TUN and route operations. Restart as Administrator now?"
+            Ui-Append "[$(New-Timestamp)] Admin elevation required for TUN startup."
+            Write-AppLog "Admin elevation required for TUN startup." "WARN"
+            $choice = [System.Windows.Forms.MessageBox]::Show($msg, "Administrator required", "YesNo", "Warning")
+            if ($choice -eq [System.Windows.Forms.DialogResult]::Yes -and (Start-ElevatedInstance)) {
+                $form.Close()
+            }
             return
         }
 
