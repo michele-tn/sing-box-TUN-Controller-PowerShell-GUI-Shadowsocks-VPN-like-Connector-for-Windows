@@ -1,0 +1,197 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">SingBoxTunGui - two clickable guides</title>
+  <desc id="desc">Interactive SVG promo with two panels: the left panel opens the GitHub guide, and the right panel opens the encrypted EXE distribution guide.</desc>
+
+  <defs>
+    <radialGradient id="bgGlowA" cx="20%" cy="18%" r="65%">
+      <stop offset="0" stop-color="#164e63"/>
+      <stop offset="0.45" stop-color="#0b2638"/>
+      <stop offset="1" stop-color="#07111f"/>
+    </radialGradient>
+    <radialGradient id="bgGlowB" cx="86%" cy="74%" r="54%">
+      <stop offset="0" stop-color="#34301b" stop-opacity="0.82"/>
+      <stop offset="0.46" stop-color="#132434" stop-opacity="0.64"/>
+      <stop offset="1" stop-color="#07111f" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="leftAccent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#35e7c1"/>
+      <stop offset="1" stop-color="#22a6f2"/>
+    </linearGradient>
+    <linearGradient id="rightAccent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffe08a"/>
+      <stop offset="1" stop-color="#ff8a2a"/>
+    </linearGradient>
+    <filter id="shadow" x="-18%" y="-20%" width="136%" height="146%">
+      <feDropShadow dx="0" dy="22" stdDeviation="24" flood-color="#000000" flood-opacity="0.34"/>
+    </filter>
+    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="14" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <clipPath id="leftClip">
+      <rect x="88" y="222" width="676" height="512" rx="34"/>
+    </clipPath>
+    <clipPath id="rightClip">
+      <rect x="836" y="222" width="676" height="512" rx="34"/>
+    </clipPath>
+    <clipPath id="rightIconClip">
+      <circle cx="928" cy="314" r="78"/>
+    </clipPath>
+    <style>
+      text {
+        font-family: "Segoe UI", Arial, sans-serif;
+        letter-spacing: 0;
+      }
+      .panel {
+        cursor: pointer;
+        transform-box: fill-box;
+        transform-origin: center;
+        transition: transform .24s ease, opacity .24s ease;
+      }
+      .panel:hover {
+        transform: translateY(-14px) scale(1.018);
+      }
+      .card-bg {
+        transition: fill .24s ease, stroke .24s ease;
+      }
+      .panel:hover .card-bg {
+        fill: rgba(255, 255, 255, .14);
+        stroke: rgba(255, 255, 255, .58);
+      }
+      .cta-bg {
+        transition: fill .24s ease, stroke .24s ease;
+      }
+      .panel:hover .cta-bg {
+        fill: rgba(255, 255, 255, .20);
+        stroke: rgba(255, 255, 255, .70);
+      }
+      .hover-arrow {
+        opacity: 0;
+        transform: translateX(-10px);
+        transition: opacity .24s ease, transform .24s ease;
+      }
+      .panel:hover .hover-arrow {
+        opacity: 1;
+        transform: translateX(0);
+      }
+      .badge {
+        transition: transform .24s ease;
+        transform-box: fill-box;
+        transform-origin: center;
+      }
+      .panel:hover .badge {
+        transform: scale(1.08) rotate(-2deg);
+      }
+      .label {
+        font-size: 24px;
+        font-weight: 700;
+        fill: #eaf6ff;
+      }
+      .muted {
+        fill: #cbdaf0;
+      }
+    </style>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#bgGlowA)"/>
+  <rect width="1600" height="900" fill="url(#bgGlowB)"/>
+
+  <g opacity="0.42">
+    <circle cx="248" cy="190" r="132" fill="#22d3ee" opacity="0.08"/>
+    <circle cx="1322" cy="690" r="192" fill="#fbbf24" opacity="0.08"/>
+    <circle cx="804" cy="470" r="244" fill="#ffffff" opacity="0.025"/>
+    <path d="M708 190 C746 155 854 155 892 190 C916 212 916 248 892 270 C854 306 746 306 708 270 C684 248 684 212 708 190Z" fill="#ffffff" opacity="0.04"/>
+  </g>
+
+  <g opacity="0.72">
+    <circle cx="800" cy="450" r="76" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-opacity="0.34"/>
+    <circle cx="800" cy="450" r="38" fill="#0f172a" stroke="#94a3b8" stroke-width="1.5" stroke-opacity="0.50"/>
+    <path d="M770 450h60M800 420v60" stroke="#7dd3fc" stroke-width="4" stroke-linecap="round" opacity="0.9"/>
+    <circle cx="800" cy="450" r="8" fill="#f8fafc"/>
+  </g>
+
+  <text x="800" y="86" text-anchor="middle" font-size="72" font-weight="900" fill="#ffffff">SingBoxTunGui</text>
+  <text x="800" y="136" text-anchor="middle" font-size="30" fill="#c7d2fe">Two guides to connect, package, and verify on Windows</text>
+
+  <a href="https://github.com/michele-tn/sing-box-TUN-Controller-PowerShell-GUI-Shadowsocks-VPN-like-Connector-for-Windows" target="_blank" aria-label="Open the GitHub guide for the PowerShell TUN controller GUI">
+    <g class="panel" filter="url(#shadow)">
+      <rect class="card-bg" x="88" y="222" width="676" height="512" rx="34" fill="rgba(255,255,255,.095)" stroke="rgba(255,255,255,.30)" stroke-width="2"/>
+      <g clip-path="url(#leftClip)">
+        <circle cx="716" cy="256" r="128" fill="#22d3ee" opacity="0.11"/>
+        <circle cx="128" cy="706" r="168" fill="#14b8a6" opacity="0.10"/>
+      </g>
+      <g class="badge">
+        <path d="M184 246l64 27-12 92-52 39-52-39-12-92z" fill="url(#rightAccent)"/>
+        <path d="M158 325l25 29 45-62" fill="none" stroke="#ffffff" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+      </g>
+
+      <text x="292" y="310" font-size="52" font-weight="900" fill="#ffffff">Guide 1</text>
+      <text x="292" y="356" font-size="29" font-weight="800" fill="#a7f3d0">PowerShell TUN Controller</text>
+      <text x="122" y="460" font-size="27" class="muted">
+        <tspan x="122" dy="0">Start and stop sing-box, configure</tspan>
+        <tspan x="122" dy="37">ss:// links, DNS, routing, logs,</tspan>
+        <tspan x="122" dy="37">and network reset from one GUI.</tspan>
+      </text>
+
+      <g>
+        <rect x="122" y="594" width="120" height="46" rx="23" fill="rgba(15,23,42,.70)" stroke="rgba(255,255,255,.28)"/>
+        <text x="182" y="625" text-anchor="middle" class="label">TUN</text>
+        <rect x="258" y="594" width="154" height="46" rx="23" fill="rgba(15,23,42,.70)" stroke="rgba(255,255,255,.28)"/>
+        <text x="335" y="625" text-anchor="middle" class="label">WinForms</text>
+        <rect x="428" y="594" width="176" height="46" rx="23" fill="rgba(15,23,42,.70)" stroke="rgba(255,255,255,.28)"/>
+        <text x="516" y="625" text-anchor="middle" class="label">Shadowsocks</text>
+      </g>
+
+      <rect class="cta-bg" x="122" y="660" width="378" height="54" rx="27" fill="rgba(255,255,255,.10)" stroke="rgba(255,255,255,.30)"/>
+      <text x="278" y="696" text-anchor="middle" font-size="27" font-weight="850" fill="#ffffff">Open GitHub guide</text>
+      <circle class="hover-arrow" cx="460" cy="687" r="18" fill="rgba(255,255,255,.14)" stroke="rgba(255,255,255,.44)"/>
+      <path class="hover-arrow" d="M450 687h19m-8-8 8 8-8 8" fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </a>
+
+  <a href="https://michele-tn.github.io/SingBoxTunGui-Encrypted-Windows-Distribution/" target="_blank" aria-label="Open the encrypted and signed EXE distribution guide">
+    <g class="panel" filter="url(#shadow)">
+      <rect class="card-bg" x="836" y="222" width="676" height="512" rx="34" fill="rgba(255,255,255,.095)" stroke="rgba(255,255,255,.30)" stroke-width="2"/>
+      <g clip-path="url(#rightClip)">
+        <circle cx="1448" cy="268" r="150" fill="#f59e0b" opacity="0.12"/>
+        <circle cx="904" cy="716" r="150" fill="#fbbf24" opacity="0.08"/>
+      </g>
+      <g class="badge">
+        <circle cx="928" cy="314" r="82" fill="#ffffff" stroke="rgba(255,255,255,.70)" stroke-width="2"/>
+        <image href="../SingBoxTunGui/assets/SingBoxTunGui.ico" x="864" y="250" width="128" height="128" preserveAspectRatio="xMidYMid meet" clip-path="url(#rightIconClip)"/>
+      </g>
+
+      <text x="1056" y="310" font-size="52" font-weight="900" fill="#ffffff">Guide 2</text>
+      <text x="1056" y="356" font-size="29" font-weight="800" fill="#fde68a">Encrypted, signed EXE</text>
+      <text x="870" y="460" font-size="27" class="muted">
+        <tspan x="870" dy="0">Build a Windows package with</tspan>
+        <tspan x="870" dy="37">an AES-256 payload, C# launcher,</tspan>
+        <tspan x="870" dy="37">Authenticode signing, SHA-256,</tspan>
+        <tspan x="870" dy="37">and a public certificate.</tspan>
+      </text>
+
+      <g>
+        <rect x="870" y="594" width="136" height="46" rx="23" fill="rgba(15,23,42,.70)" stroke="rgba(255,255,255,.28)"/>
+        <text x="938" y="625" text-anchor="middle" class="label">AES-256</text>
+        <rect x="1022" y="594" width="128" height="46" rx="23" fill="rgba(15,23,42,.70)" stroke="rgba(255,255,255,.28)"/>
+        <text x="1086" y="625" text-anchor="middle" class="label">SHA-256</text>
+        <rect x="1166" y="594" width="166" height="46" rx="23" fill="rgba(15,23,42,.70)" stroke="rgba(255,255,255,.28)"/>
+        <text x="1249" y="625" text-anchor="middle" class="label">Certificate</text>
+      </g>
+
+      <rect class="cta-bg" x="870" y="660" width="330" height="54" rx="27" fill="rgba(255,255,255,.10)" stroke="rgba(255,255,255,.30)"/>
+      <text x="1000" y="696" text-anchor="middle" font-size="27" font-weight="850" fill="#ffffff">Open web guide</text>
+      <circle class="hover-arrow" cx="1160" cy="687" r="18" fill="rgba(255,255,255,.14)" stroke="rgba(255,255,255,.44)"/>
+      <path class="hover-arrow" d="M1150 687h19m-8-8 8 8-8 8" fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </a>
+
+  <g filter="url(#softGlow)" opacity="0.96">
+    <path d="M516 808 C604 772 696 772 800 808 C904 844 996 844 1084 808" fill="none" stroke="#38bdf8" stroke-width="4" stroke-linecap="round" opacity="0.42"/>
+    <path d="M620 810 C684 790 734 790 800 810 C866 830 916 830 980 810" fill="none" stroke="#fde68a" stroke-width="4" stroke-linecap="round" opacity="0.48"/>
+  </g>
+  <text x="800" y="824" text-anchor="middle" font-size="30" fill="#e0f2fe">From source code to a verifiable Windows release.</text>
+</svg>
